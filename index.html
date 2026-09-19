@@ -72,7 +72,7 @@
   <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon.png">
   <meta name="msapplication-TileImage" content="icon-192.png">
   <meta name="msapplication-TileColor" content="#c81414">
-  <script>window.__APP_VER = "bd95736258";</script>
+  <script>window.__APP_VER = "a8b1cc5e3c";</script>
 </head>
 <body>
 
@@ -468,23 +468,41 @@ function размер() {
 }
 /* фигуру ставим ровно в центр стойки и подбираем расстояние камеры под её размер */
 function навестиКамеру(пара) {
-  стойка.rotation.set(0, вращ, 0);
-  const короб = new THREE.Box3();
-  стойка.children.forEach(д => короб.expandByObject(д));
-  if (короб.isEmpty()) { кам.position.set(0, 0, 22); кам.lookAt(0, 0, 0); return; }
+  /* ⚠️ ЖАЛОБА МАРКА (дважды): «фигуру не видно в центре». Причина была в том, что
+     габариты считались по НЕОБНОВЛЁННЫМ матрицам и при уже повёрнутой стойке —
+     центр выходил неверным. Теперь: сбрасываем поворот, обновляем матрицы,
+     меряем в чистом виде, центрируем и только потом возвращаем поворот. */
+  const былВращ = вращ, былНаклон = стойка.rotation.x;
+  стойка.rotation.set(0, 0, 0);
+  стойка.updateMatrixWorld(true);
+  const короб = new THREE.Box3().setFromObject(стойка);
+  if (короб.isEmpty()) { кам.position.set(0, 0, 22); кам.lookAt(0, 0, 0);
+    стойка.rotation.set(былНаклон, былВращ, 0); return; }
   const ц = короб.getCenter(new THREE.Vector3());
   стойка.children.forEach(д => { д.position.x -= ц.x; д.position.y -= ц.y; д.position.z -= ц.z; });
+  стойка.updateMatrixWorld(true);
   const р = короб.getSize(new THREE.Vector3());
   /* при вращении фигура «шире» — считаем по диагонали основания */
-  const ширина = Math.hypot(р.x, р.z), высота = р.y;
+  /* ⚠️ считали по диагонали (на случай любого поворота) — из-за этого фигура была
+     мелковата и Марку казалась потерянной. Берём наибольшую сторону с небольшим запасом. */
+  const ширина = Math.max(р.x, р.z) * 1.1, высота = р.y;
   const вертФов = кам.fov * Math.PI / 180;
-  const запасВерх = 0.62;                       // сверху надписи, снизу кнопки
+  const шапка = ($('верх3d').offsetHeight || 120), низ = ($('низ3d').offsetHeight || 80);
+  const свободно = Math.max(0.35, (innerHeight - шапка - низ - 24) / innerHeight);
+  const запасВерх = свободно * 0.99;            // ровно столько, сколько реально свободно
   const дальВыс = (высота / запасВерх) / 2 / Math.tan(вертФов / 2);
   const гориз = 2 * Math.atan(Math.tan(вертФов / 2) * кам.aspect);
-  const дальШир = (ширина / 0.86) / 2 / Math.tan(гориз / 2);
-  const даль = Math.max(дальВыс, дальШир) * 1.12 + 3;
-  кам.position.set(0, 0, даль);
-  кам.lookAt(0, 0, 0);
+  const дальШир = (ширина / 0.94) / 2 / Math.tan(гориз / 2);
+  const даль = Math.max(дальВыс, дальШир) * 1.08 + 2;
+  /* ⚠️ ЖАЛОБА МАРКА: фигура жалась к верху, а снизу пустовало. Центрируем её не по
+     середине ЭКРАНА, а по середине СВОБОДНОГО места — между шапкой и кнопками. */
+  const серединаСвободного = (шапка + (innerHeight - низ)) / 2;
+  const сдвигПикс = серединаСвободного - innerHeight / 2;
+  const мирНаПиксель = (2 * даль * Math.tan(вертФов / 2)) / innerHeight;
+  const ty = сдвигПикс * мирНаПиксель;
+  кам.position.set(0, ty, даль);
+  кам.lookAt(0, ty, 0);
+  стойка.rotation.set(былНаклон, былВращ, 0);
 }
 addEventListener('resize', размер);
 let показВключён = false;
