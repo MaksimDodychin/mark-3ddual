@@ -72,7 +72,7 @@
   <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon.png">
   <meta name="msapplication-TileImage" content="icon-192.png">
   <meta name="msapplication-TileColor" content="#c81414">
-  <script>window.__APP_VER = "a8b1cc5e3c";</script>
+  <script>window.__APP_VER = "c5ea4f1465";</script>
 </head>
 <body>
 
@@ -90,6 +90,7 @@
   <button class="кн" id="кнПечать">🖨 ПЕЧАТАТЬ</button>
   <button class="кн сер" id="кнДуэль">⚔️ ДУЭЛЬ НА ДВОИХ</button>
   <button class="кн сер" id="кнГалерея">🗄 МОЯ ПОЛКА</button>
+  <button class="кн сер мал" id="кнЗвук">🔊 Звук</button>
   <div class="под" style="opacity:.6;font-size:13px">Придумал и заказал — Марк</div>
 </div>
 
@@ -281,6 +282,7 @@ function начатьПечать(ввод, дуэльный) {
     готово: сетка.map(р => р.map(() => 0)),
     верно: 0, сопли: 0, темп: 0, t0: performance.now(), идёт: true, дуэльный: !!дуэльный };
   показать('печЭкран');
+  музыка(дуэльный ? 'бой' : 'спокойно');       // 🔊 один — спокойная, дуэль — боевая
   $('тапни').textContent = '👆 ТАПАЙ, когда сопло над нужным местом!';
   цикл();
 }
@@ -390,6 +392,80 @@ function кончитьПечать() {
     сетка: печ.сетка, качество: Math.round(качество * 100), сопли: печ.сопли,
     секунды: Math.round(секунды), очки, когда: Date.now() };
   if (печ.дуэльный) дуэльГотово(итог); else { вПолку(итог); показатьФигуру(итог, 'печать'); }
+}
+/* ═══════════ 🔊 МУЗЫКА ═══════════
+   Две темы, обе синтезом — файлов нет, значит работает и без интернета.
+   «Спокойная» — когда печатаешь один: медленно, мягко, по пентатонике.
+   «Боевая» — в дуэли: вдвое быстрее, жёсткий бас и барабан. */
+const Муз = {
+  A:null, вкл:true, тема:null, шаг:0, след:0, таймер:null, гейн:null,
+  ТЕМЫ: {
+    спокойно: { темп:0.46, вид:'triangle', гром:0.055,
+      ноты:[392,440,523,587,659,587,523,440, 349,392,440,523,587,523,440,392],
+      бас:[98,0,0,0, 110,0,0,0, 87.3,0,0,0, 98,0,0,0], барабан:false },
+    бой: { темп:0.2, вид:'sawtooth', гром:0.05,
+      ноты:[440,0,523,440, 587,0,523,0, 440,0,392,440, 349,0,392,0],
+      бас:[110,110,0,110, 146.8,0,146.8,0, 130.8,130.8,0,130.8, 98,0,98,98], барабан:true },
+  },
+  включить() {
+    if (this.A) return;
+    try { this.A = new (window.AudioContext || window.webkitAudioContext)();
+      this.гейн = this.A.createGain(); this.гейн.gain.value = 1; this.гейн.connect(this.A.destination);
+    } catch (_) {}
+  },
+  старт(тема) {
+    if (this.тема === тема) return;
+    this.включить(); this.тема = тема; this.шаг = 0;
+    if (!this.A) return;
+    if (this.A.state === 'suspended') this.A.resume();
+    this.след = this.A.currentTime + 0.06;
+    clearInterval(this.таймер);
+    this.таймер = setInterval(() => this.тик(), 60);
+  },
+  стоп() { this.тема = null; clearInterval(this.таймер); this.таймер = null; },
+  тик() {
+    if (!this.A || !this.тема || !this.вкл) return;
+    const Т = this.ТЕМЫ[this.тема]; if (!Т) return;
+    while (this.след < this.A.currentTime + 0.25) {
+      const i = this.шаг % 16;
+      if (Т.ноты[i]) this.нота(Т.ноты[i], Т.темп * 0.9, Т.вид, Т.гром, this.след);
+      if (Т.бас[i]) this.нота(Т.бас[i], Т.темп * 1.5, 'sine', Т.гром * 1.5, this.след);
+      if (Т.барабан && i % 4 === 2) this.шум(this.след, 0.08);
+      this.след += Т.темп; this.шаг++;
+    }
+  },
+  нота(f, д, вид, гром, когда) {
+    const o = this.A.createOscillator(), g = this.A.createGain();
+    o.type = вид; o.frequency.value = f;
+    g.gain.setValueAtTime(0, когда);
+    g.gain.linearRampToValueAtTime(гром, когда + 0.03);
+    g.gain.exponentialRampToValueAtTime(0.0008, когда + д);
+    o.connect(g); g.connect(this.гейн); o.start(когда); o.stop(когда + д + 0.05);
+  },
+  шум(когда, д) {
+    const n = this.A.sampleRate * д, б = this.A.createBuffer(1, n, this.A.sampleRate), д2 = б.getChannelData(0);
+    for (let i = 0; i < n; i++) д2[i] = (Math.random()*2 - 1) * (1 - i/n);
+    const s2 = this.A.createBufferSource(); s2.buffer = б;
+    const g = this.A.createGain(); g.gain.value = 0.05;
+    s2.connect(g); g.connect(this.гейн); s2.start(когда);
+  },
+};
+try { Муз.вкл = localStorage.getItem('дуэль3d_звук') !== '0'; } catch (_) {}
+function звукТумблер() {
+  Муз.вкл = !Муз.вкл;
+  try { localStorage.setItem('дуэль3d_звук', Муз.вкл ? '1' : '0'); } catch (_) {}
+  if (!Муз.вкл) Муз.стоп(); else if (текущаяТема) Муз.старт(текущаяТема);
+  обновитьЗвукКнопку();
+  тост(Муз.вкл ? '🔊 Музыка включена' : '🔇 Музыка выключена', 1400);
+}
+let текущаяТема = null;
+function музыка(тема) {
+  текущаяТема = тема;
+  if (!тема) { Муз.стоп(); return; }
+  if (Муз.вкл) Муз.старт(тема);
+}
+function обновитьЗвукКнопку() {
+  const b = $('кнЗвук'); if (b) b.textContent = Муз.вкл ? '🔊 Звук' : '🔇 Звук';
 }
 function писк(f, д) { try { const A = писк._a || (писк._a = new (window.AudioContext || window.webkitAudioContext)());
   const o = A.createOscillator(), g = A.createGain(); o.frequency.value = f; o.type = 'triangle';
@@ -507,6 +583,7 @@ function навестиКамеру(пара) {
 addEventListener('resize', размер);
 let показВключён = false;
 function показатьФигуру(итог, режим, второй) {
+  музыка(второй ? 'бой' : 'спокойно');         // на показе фигуры музыка не обрывается
   while (стойка.children.length) стойка.remove(стойка.children[0]);
   const пара = !!второй;
   стойка.add(собратьФигуру(итог, пара ? -9 : 0));
@@ -668,11 +745,14 @@ function свестиДуэль() {
 /* ═══════════ экраны ═══════════ */
 function показать(id) {
   закрыть3d();
+  if (id !== 'печЭкран') музыка(id === 'дуэль' ? 'бой' : null);
   ['меню','заказ','печЭкран','галерея','дуэль'].forEach(i => $(i).classList.toggle('вкл', i === id));
 }
 $('кнПечать').onclick = () => { рисоватьЦвета(); показать('заказ'); $('знает').textContent = ''; };
 $('кнДуэль').onclick = открытьДуэль;
 $('кнГалерея').onclick = открытьГалерею;
+$('кнЗвук').onclick = звукТумблер;
+обновитьЗвукКнопку();
 $('кнНазад1').onclick = () => показать('меню');
 $('кнНазад2').onclick = () => показать('меню');
 $('кнНазад3').onclick = () => показать('меню');
@@ -704,6 +784,8 @@ window.__dbg = {
     return печ ? печ.идёт : false;
   },
   get полка() { return полка.map(и => и.слово); },
+  get музыка() { return { тема:текущаяТема, играет:!!Муз.таймер, вкл:Муз.вкл }; },
+  звук() { звукТумблер(); return Муз.вкл; },
   get цвета() { return выбраны.slice(); },
   дуэльТест(слово) { дуэльНачать(слово); return дуэльСост && дуэльСост.слово; },
   чужойИтог(и) { if (!дуэльСост) дуэльСост = { слово:и.слово, мой:null, чужой:null };
