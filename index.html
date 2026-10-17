@@ -81,7 +81,7 @@
   <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon.png">
   <meta name="msapplication-TileImage" content="icon-192.png">
   <meta name="msapplication-TileColor" content="#c81414">
-  <script>window.__APP_VER = "b29c1454f1";</script>
+  <script>window.__APP_VER = "03dcfe93fb";</script>
 </head>
 <body>
 
@@ -653,26 +653,65 @@ addEventListener('keydown', e => { if (e.code === 'Space' && печ && печ.и
 addEventListener('keyup', e => { if (e.code === 'Space') отпустить(); });
 
 /* ═══════════ 🎥 СЦЕНА: принтер и камера, которая облетает его ═══════════ */
-let режимСцены = 'нет', обл = { a:0.6, накл:0.42, даль:62, цель:new THREE.Vector3(0, 7, 2) }, самВращ = true, тянем = null, витрина = new THREE.Group(); сцена.add(витрина);
-function показатьПринтер() { ПР.g.visible = true; витрина.visible = false; режимСцены = 'принтер'; обл.даль = 46; обл.накл = 0.5; обл.цель.set(0, 4, НОС_Z); самВращ = true;
+let режимСцены = 'нет', обл = { a:0.6, накл:0.42, даль:62, зум:1, цель:new THREE.Vector3(0, 7, 2) }, самВращ = true, тянем = null, витрина = new THREE.Group(); сцена.add(витрина);
+/* 📐 рамка фигуры: центр и радиус — по нарезке (что реально печатается) */
+function рамкаФигуры(н) { let a = 1e9, b = -1e9, c = 1e9, d = -1e9;
+  for (const сл of н.слои) for (const r of сл.строки) for (let k = 0; k < н.nx; k++) if (r.клетки[k]) { a = Math.min(a, k); b = Math.max(b, k); c = Math.min(c, r.z); d = Math.max(d, r.z); }
+  if (b < a) return { cx:0, cz:0, H:5, R:5 };
+  const x1 = н.x0 + a*КЛ, x2 = н.x0 + (b + 1)*КЛ, z1 = c - ВАЛИК/2, z2 = d + ВАЛИК/2, H = н.высота + 0.4;
+  return { cx:(x1 + x2)/2, cz:(z1 + z2)/2, hx:(x2 - x1)/2, hz:(z2 - z1)/2, H, R:0.5*Math.hypot(x2 - x1, H, z2 - z1) }; }
+/* сколько отойти, чтобы фигура радиуса R влезла целиком, с запасом под надписи сверху и кнопки снизу */
+function дальДля(R, запас) { const вф = THREE.MathUtils.degToRad(кам.fov), гф = 2*Math.atan(Math.tan(вф/2)*кам.aspect);
+  return Math.max(16, Math.min(80, R/Math.tan(Math.min(вф, гф)/2)*(запас || 1.35))); }
+/* 👻 детали принтера, которые встали между камерой и фигурой, делаем прозрачными */
+const гасимые = []; ПР.g.traverse(о => { if (!о.isMesh) return; for (let п = о; п; п = п.parent) if (п === ПР.стол) return;
+  о.material = о.material.clone(); о.userData.оп = о.material.opacity; о.userData.гас = 0; гасимые.push(о); });
+const _луч = new THREE.Raycaster(), _нап = new THREE.Vector3();
+const _ndc = new THREE.Vector2(), _угол = new THREE.Vector3();
+function гаситьМешающих(dt, р, z0) { for (const о of гасимые) о.userData.мешает = false;
+  if (ПР.g.visible && р) {   // где фигура на экране: проецируем углы её коробки → сетка 5×5 лучей по этому месту + луч в сопло
+    let x1 = 1, x2 = -1, y1 = 1, y2 = -1; const hx = р.hx || 3, hz = р.hz || 3;
+    for (const sx of [-1, 1]) for (const sy of [0, 1]) for (const sz of [-1, 1]) { _угол.set(р.cx + sx*hx, sy*р.H, z0 + sz*hz).project(кам);
+      x1 = Math.min(x1, _угол.x); x2 = Math.max(x2, _угол.x); y1 = Math.min(y1, _угол.y); y2 = Math.max(y2, _угол.y); }
+    x1 = Math.max(-1, x1); x2 = Math.min(1, x2); y1 = Math.max(-1, y1); y2 = Math.min(1, y2);
+    const до = кам.position.distanceTo(_угол.set(р.cx, р.H*0.5, z0));
+    for (let i = 0; i < 5; i++) for (let j = 0; j < 5; j++) { _ndc.set(x1 + (x2 - x1)*(i + 0.5)/5, y1 + (y2 - y1)*(j + 0.5)/5); _луч.setFromCamera(_ndc, кам); _луч.far = до;
+      for (const х of _луч.intersectObjects(гасимые, false)) х.object.userData.мешает = true; }
+    _луч.set(кам.position, _нап.subVectors(ПР.сопло, кам.position).normalize()); _луч.far = кам.position.distanceTo(ПР.сопло) - 0.3;
+    for (const х of _луч.intersectObjects(гасимые, false)) х.object.userData.мешает = true; }
+  for (const о of гасимые) { const u = о.userData; u.гас += ((u.мешает ? 1 : 0) - u.гас)*Math.min(1, dt*8); const оп = u.оп*(1 - 0.85*u.гас);
+    const прозр = оп < u.оп - 0.01, т = прозр || u.оп < 1; if (о.material.transparent !== т) { о.material.transparent = т; о.material.needsUpdate = true; }   // без needsUpdate шейдер остаётся «непрозрачным»
+    о.material.opacity = оп; о.material.depthWrite = !прозр; о.castShadow = !прозр || u.гас < 0.5; } }
+function навестиНа(р, сдвиг, запас, накл) {          // цель — центр фигуры чуть выше середины: сверху надписи, фигура садится ниже
+  обл.цель.set(р.cx + (сдвиг ? сдвиг.x : 0), р.H*0.5 + р.R*0.12, р.cz + (сдвиг ? сдвиг.z : 0)); обл.даль = дальДля(р.R, запас); обл.зум = 1; if (накл !== undefined) обл.накл = накл; }
+function показатьПринтер() { ПР.g.visible = true; витрина.visible = false; режимСцены = 'принтер'; размер(); печ.рамка = рамкаФигуры(печ.н);
+  навестиНа(печ.рамка, { x:0, z:ПР.стол.position.z }, 1.4, 0.55); самВращ = true;
   $('верх3d').classList.remove('вкл'); $('низ3d').classList.remove('вкл');
   $('cv3d').classList.add('вкл'); ['меню','заказ','галерея','дуэль'].forEach(i => $(i).classList.remove('вкл')); размер(); }
 function убратьМодели() { for (const д of [...ПР.стол.children]) if (!д.userData.часть) { ПР.стол.remove(д); if (д.userData.гладь) д.geometry.dispose(); } }   // всё, что не сам стол: валики, сопли, призрак, гладкая фигура
 ПР.стол.children.forEach(д => д.userData.часть = true);
 function размер() { renderer.setSize(innerWidth, innerHeight, false); кам.aspect = innerWidth/innerHeight; кам.updateProjectionMatrix(); }
 addEventListener('resize', размер);
-$('cv3d').addEventListener('pointerdown', e => { тянем = { x:e.clientX, y:e.clientY }; самВращ = false; });
+const пальцы = new Map(); let щипок = null;            // 🤏 двумя пальцами — ближе / дальше
+$('cv3d').addEventListener('pointerdown', e => { пальцы.set(e.pointerId, { x:e.clientX, y:e.clientY }); самВращ = false;
+  if (пальцы.size === 2) { const [p1, p2] = [...пальцы.values()]; щипок = { d:Math.hypot(p1.x - p2.x, p1.y - p2.y), зум:обл.зум }; тянем = null; } else тянем = { x:e.clientX, y:e.clientY }; });
+addEventListener('pointermove', e => { if (!пальцы.has(e.pointerId)) return; пальцы.set(e.pointerId, { x:e.clientX, y:e.clientY });
+  if (щипок && пальцы.size === 2) { const [p1, p2] = [...пальцы.values()]; обл.зум = Math.max(0.45, Math.min(2.2, щипок.зум*щипок.d/Math.max(20, Math.hypot(p1.x - p2.x, p1.y - p2.y)))); } });
+const отпалец = e => { if (!пальцы.delete(e.pointerId)) return; if (пальцы.size < 2) щипок = null; if (!пальцы.size) setTimeout(() => { if (!пальцы.size) самВращ = true; }, 2500); };
+addEventListener('pointerup', отпалец); addEventListener('pointercancel', отпалец);
 addEventListener('pointermove', e => { if (!тянем) return; обл.a -= (e.clientX - тянем.x)*0.008; обл.накл = Math.max(0.05, Math.min(1.2, обл.накл + (e.clientY - тянем.y)*0.005)); тянем = { x:e.clientX, y:e.clientY }; });
 addEventListener('pointerup', () => { if (тянем) setTimeout(() => { if (!тянем) самВращ = true; }, 2500); тянем = null; });
-$('cv3d').addEventListener('wheel', e => { обл.даль = Math.max(24, Math.min(110, обл.даль + Math.sign(e.deltaY)*4)); }, { passive:true });
+$('cv3d').addEventListener('wheel', e => { обл.зум = Math.max(0.45, Math.min(2.2, обл.зум*(e.deltaY > 0 ? 1.1 : 0.9))); }, { passive:true });
 let прошлый = performance.now(); const _цельП = new THREE.Vector3();
 (function кадр() { requestAnimationFrame(кадр);
   const t = performance.now(), dt = Math.min(0.05, (t - прошлый)/1000); прошлый = t;
   if (режимСцены === 'нет') return;
-  if (печ && печ.идёт) { шагПечати(dt); if (печ.идёт) обл.цель.lerp(_цельП.set(0, (печ.сл + 1)*печ.н.h + 2.5, НОС_Z), Math.min(1, dt*1.5)); }   // камера следит за соплом
+  if (печ && печ.идёт) { шагПечати(dt); const р = печ.рамка; if (печ.идёт && р) обл.цель.lerp(_цельП.set(р.cx, р.H*0.5 + р.R*0.12, ПР.стол.position.z + р.cz), Math.min(1, dt*2)); }   // камера держит фигуру (стол ездит — едем за ним)
   if (самВращ) обл.a += dt*(печ && печ.идёт ? 0.16 : 0.3);
-  кам.position.set(обл.цель.x + Math.sin(обл.a)*Math.cos(обл.накл)*обл.даль, обл.цель.y + Math.sin(обл.накл)*обл.даль, обл.цель.z + Math.cos(обл.a)*Math.cos(обл.накл)*обл.даль);
-  кам.lookAt(обл.цель); renderer.render(сцена, кам); })();
+  const дл = обл.даль*обл.зум; кам.position.set(обл.цель.x + Math.sin(обл.a)*Math.cos(обл.накл)*дл, обл.цель.y + Math.sin(обл.накл)*дл, обл.цель.z + Math.cos(обл.a)*Math.cos(обл.накл)*дл);
+  кам.lookAt(обл.цель);
+  if (режимСцены === 'принтер' && печ) { const р = печ.рамка || (печ.рамка = рамкаФигуры(печ.н)); гаситьМешающих(dt, р, ПР.стол.position.z + р.cz); }   // всё, что заслоняет фигуру и сопло, — прозрачное
+  renderer.render(сцена, кам); })();
 /* 📸 снимок фигуры для полки: маленькая картинка, чтобы не пересобирать модель */
 function снимокМодели() { const w = 260, h = 184, к2 = new THREE.PerspectiveCamera(36, w/h, 0.1, 300); const н = печ.н;
   к2.position.set(14, н.высота*0.9 + 8, 22 + НОС_Z); к2.lookAt(0, н.высота*0.45, ПР.стол.position.z); const r2 = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true });
@@ -684,7 +723,7 @@ function снимокМодели() { const w = 260, h = 184, к2 = new THREE.Pe
 
 /* ═══════════ ✨ ПОСЛЕ ПЕЧАТИ: снимаешь фигуру со стола и крутишь; «шлифовка» делает её гладкой и блестящей ═══════════ */
 function показатьИтогПечати(итог) {
-  музыка('спокойно'); показВключён = true; обл.цель.set(0, печ.н.высота*0.5 + 0.5, НОС_Z + 6); обл.даль = Math.max(30, печ.н.высота*3.4 + 18); самВращ = true;
+  музыка('спокойно'); показВключён = true; const р = печ.рамка || рамкаФигуры(печ.н); навестиНа(р, { x:0, z:ПР.стол.position.z }, 1.6, 0.42); обл.цель.y -= р.R*0.14; самВращ = true;   // снизу кнопки — фигура по центру
   верх3d(итог, null); кнопкиНиза('печать', итог);
 }
 function отшлифовать() { if (!печ || !печ.мод || !печ.итог || печ.итог.шлиф) return;
@@ -699,12 +738,16 @@ function Snd2(вид) { if (вид === 'шлиф') { for (let i = 0; i < 6; i++)
 let показВключён = false;
 function показатьФигуру(итог, режим, второй) {
   музыка(второй ? 'бой' : 'спокойно'); while (витрина.children.length) витрина.remove(витрина.children[0]);
+  const рамки = [];
   const поставить = (и, x) => { const подст = new THREE.Group(); подст.position.x = x; витрина.add(подст);
+    рамки.push(и.слоиПечати ? рамкаФигуры(нарезать(сделатьФигуру(и.слово))) : (() => { const H = (и.сетка || []).length*0.8; return { cx:-0.4, cz:0, H, R:0.5*Math.hypot(9.6, H, 2.4) }; })());
     мш(new THREE.CylinderGeometry(9, 9.6, 1.2, 48), new THREE.MeshStandardMaterial({ color:0x2a3346, roughness:0.4, metalness:0.3 }), 0, -0.6, 0, подст);
     if (и.слоиПечати) модельПоРецепту(и, подст); else подст.add(старая(и)); };
   поставить(итог, второй ? -12 : 0); if (второй) поставить(второй, 12);
-  ПР.g.visible = false; витрина.visible = true; режимСцены = 'витрина'; обл.цель.set(0, 5, 0); обл.даль = второй ? 64 : 42; самВращ = true; показВключён = true;
+  ПР.g.visible = false; витрина.visible = true; режимСцены = 'витрина'; самВращ = true; показВключён = true;
   $('cv3d').classList.add('вкл'); ['меню','заказ','галерея','дуэль'].forEach(i => $(i).classList.remove('вкл')); размер();
+  if (второй) { const H = Math.max(рамки[0].H, рамки[1].H); навестиНа({ cx:0, cz:0, H, R:12 + Math.max(рамки[0].R, рамки[1].R) }, null, 1.25, 0.32); }
+  else навестиНа({ ...рамки[0], R:Math.max(рамки[0].R, 6.5) }, null, 1.45, 0.32);          // и подставку чуть видно
   верх3d(итог, второй); кнопкиНиза(режим, итог);
 }
 function верх3d(итог, второй) {
@@ -886,6 +929,9 @@ window.__dbg = {
   допечатать() { if (!печ) return null; печ.авто = true; let щит = 0; while (печ.идёт && щит++ < 400000) шагПечати(0.02); return печ.идёт; },
   итог() { return печ && печ.итог ? { ...печ.итог, картинка:!!печ.итог.картинка } : null; },
   шлифовка() { отшлифовать(); return true; },
+  кто(x, y) { const r = new THREE.Raycaster(); r.setFromCamera(new THREE.Vector2(x || 0, y || 0), кам); return r.intersectObjects(сцена.children, true).slice(0, 4).map(h => ({ т:h.object.geometry.type, п:h.object.geometry.parameters && Object.values(h.object.geometry.parameters).slice(0, 3).map(v => +(+v).toFixed?.(2) || 0), д:+h.distance.toFixed(1),
+    в:гасимые.includes(h.object), гас:+(h.object.userData.гас || 0).toFixed(2), оп:+h.object.material.opacity.toFixed(2), инст:!!h.object.isInstancedMesh, родитель:h.object.parent === ПР.портал ? 'портал' : h.object.parent === ПР.каретка ? 'каретка' : h.object.parent === ПР.g ? 'g' : '?' })); },
+  get гашение() { return { всего:гасимые.length, мешают:гасимые.filter(о => о.userData.мешает).length, гаснут:гасимые.filter(о => о.userData.гас > 0.5).length, кам:кам.position.toArray().map(v => +v.toFixed(1)), цель:обл.цель.toArray().map(v => +v.toFixed(1)), сопло:ПР.сопло.toArray().map(v => +v.toFixed(1)), режим:режимСцены }; },
   get валики() { if (!печ) return null; const им = печ.мод.им, м = new THREE.Matrix4(), out = []; for (const i of [0, 1, 2, Math.floor(им.count/2), им.count - 1]) { им.getMatrixAt(i, м); out.push(м.elements.map(v => +v.toFixed(2))); } return { count:им.count, out }; },
   камера(a, накл, даль) { самВращ = false; обл.a = a; if (накл !== undefined) обл.накл = накл; if (даль) обл.даль = даль; return true; },
   get полка() { return полка.map(и => и.слово); },
