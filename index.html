@@ -37,7 +37,16 @@
   .бирка{background:#131c2c;border:2px solid #ffffff1f;border-radius:12px;padding:7px 12px}
   #тапни{font-weight:900;font-size:clamp(16px,4.4vw,22px);color:#7dd3fc}
   /* 🔄 просмотр */
-  #cv3d{position:fixed;inset:0;display:none}
+  #cv3d{position:fixed;inset:0;display:none;touch-action:none}
+  #печHUD{position:fixed;left:0;right:0;top:0;z-index:6;display:none;flex-direction:column;align-items:center;gap:6px;padding:10px;pointer-events:none}
+  #печHUD.вкл{display:flex} #печHUD .кн{pointer-events:auto} #печHUD #кнБросить{position:fixed;top:8px;right:8px;width:auto;padding:6px 10px;font-size:13px}
+  #тапни{transition:opacity .6s} #тапни.спрятан{opacity:0}
+  #печHUD #тапни{background:#0b1220cc;border-radius:12px;padding:6px 12px;text-align:center;max-width:94vw}
+  #держи{position:fixed;right:22px;bottom:22px;z-index:7;width:132px;height:132px;border-radius:50%;border:4px solid #7dd3fc;display:none;
+    flex-direction:column;align-items:center;justify-content:center;font:900 34px inherit;color:#04121f;background:radial-gradient(circle at 35% 30%,#bae6fd,#38bdf8 60%,#0369a1);
+    box-shadow:0 8px 0 #084b73,0 0 30px #38bdf866;touch-action:none;cursor:pointer}
+  #держи small{font-size:12px;line-height:1.1;margin-top:2px} #держи.вкл{display:flex} #держи.жму{transform:translateY(6px);box-shadow:0 2px 0 #084b73,0 0 46px #fde68acc;background:radial-gradient(circle at 35% 30%,#fef3c7,#fbbf24 60%,#b45309)}
+  @media (max-height:520px){ #держи{width:104px;height:104px;font-size:28px;right:14px;bottom:14px} #печHUD{padding:4px;gap:3px} #печHUD .бирка{padding:4px 8px;font-size:12px} #печHUD #тапни{font-size:13px;padding:3px 10px} }
   #cv3d.вкл{display:block}
   #верх3d{position:fixed;left:0;right:0;top:0;z-index:5;display:none;flex-direction:column;
     align-items:center;gap:6px;padding:12px;pointer-events:none}
@@ -72,7 +81,7 @@
   <link rel="apple-touch-icon-precomposed" sizes="180x180" href="apple-touch-icon.png">
   <meta name="msapplication-TileImage" content="icon-192.png">
   <meta name="msapplication-TileColor" content="#c81414">
-  <script>window.__APP_VER = "1b48dcf7df";</script>
+  <script>window.__APP_VER = "b29c1454f1";</script>
 </head>
 <body>
 
@@ -107,17 +116,17 @@
   <button class="кн сер мал" id="кнНазад1">← назад</button>
 </div>
 
-<!-- ═══════ ПЕЧАТЬ ═══════ -->
-<div class="экран" id="печЭкран">
+<!-- ═══════ ПЕЧАТЬ — поверх настоящего 3D-принтера ═══════ -->
+<div id="печHUD">
   <div id="панель">
     <div class="бирка" id="бСлой">Слой 1</div>
     <div class="бирка" id="бКач">Качество 100%</div>
     <div class="бирка" id="бТемп">🌡 норма</div>
   </div>
-  <canvas id="холст" width="720" height="620"></canvas>
-  <div id="тапни">👆 ТАПАЙ, когда сопло над нужным местом!</div>
+  <div id="тапни">👆 ДЕРЖИ кнопку, пока сопло над голубым призраком!</div>
   <button class="кн сер мал" id="кнБросить">✖️ бросить печать</button>
 </div>
+<button id="держи">🖨<small>ДЕРЖИ —<br>ПЕЧАТЬ</small></button>
 
 <!-- ═══════ ГАЛЕРЕЯ ═══════ -->
 <div class="экран" id="галерея">
@@ -146,99 +155,144 @@ const $ = id => document.getElementById(id);
 const тост = (т, мс) => { const e = $('тост'); e.textContent = т; e.style.display = 'block';
   clearTimeout(тост._t); тост._t = setTimeout(() => e.style.display = 'none', мс || 2200); };
 
-/* ═══════════ 📐 ФИГУРЫ ═══════════
-   Принтер печатает ВСЁ, что напишешь (правило Марка 19.09.2026):
-   1) знакомое слово — настоящий предмет из словаря;
-   2) одна-две буквы или цифры — печатается сам ЗНАК;
-   3) всё остальное — принтер изобретает фигуру и гордо объявляет её новой. */
-const Ш = 12;                                    // ширина сетки печати
-function изРисунка(строки) {
-  return строки.map(р => р.split('').map(с => с === '#' ? 1 : 0));
+/* ═══════════ 📐 ФИГУРЫ — НАСТОЯЩИЕ ОБЪЁМНЫЕ (Марк 17.10) ═══════════
+   «Фигуры, которые мы печатаем, только кажутся 3D, а так они напечатаны плоские. Я однажды попросил напечатать шар —
+   и он напечатал круг.» Теперь каждая фигура — настоящее тело в пространстве, собранное из простых форм (шар, брусок,
+   цилиндр, конус, бублик, капсула…). Принтер РЕЖЕТ его на слои, как настоящий слайсер, и печатает слой за слоем.
+   Принтер по-прежнему печатает ЛЮБОЙ ввод (правило Марка 19.09): знакомое слово → предмет; 1–3 знака → объёмный знак;
+   всё остальное → принтер изобретает своё тело по «отпечатку» слова. */
+const ст = (т, о) => Object.assign({ т }, о);
+/* 📏 «внутри ли точка»: знаковое расстояние до простых тел (меньше нуля — внутри) */
+function ВнутриТела(п, x, y, z) {
+  const dx = x - (п.x || 0), dy = y - (п.y || 0), dz = z - (п.z || 0);
+  switch (п.т) {
+    case 'шар': return Math.hypot(dx, dy, dz) - п.r;
+    case 'эллипс': { const k = Math.hypot(dx/п.rx, dy/п.ry, dz/п.rz); return (k - 1)*Math.min(п.rx, п.ry, п.rz); }
+    case 'кор': { const r = п.r || 0, qx = Math.abs(dx) - (п.sx/2 - r), qy = Math.abs(dy) - (п.sy/2 - r), qz = Math.abs(dz) - (п.sz/2 - r);
+      return Math.hypot(Math.max(qx, 0), Math.max(qy, 0), Math.max(qz, 0)) + Math.min(Math.max(qx, qy, qz), 0) - r; }
+    case 'цил': { const [a, b, c] = п.ось === 'z' ? [dx, dz, dy] : п.ось === 'x' ? [dz, dx, dy] : [dx, dy, dz]; return Math.max(Math.hypot(a, c) - п.r, Math.abs(b) - п.h/2); }
+    case 'кон': { if (Math.abs(dy) > п.h/2) return Math.abs(dy) - п.h/2; const t = (dy + п.h/2)/п.h, r = п.r1 + (п.r2 - п.r1)*t; return Math.hypot(dx, dz) - r; }
+    case 'тор': { const [a, b, c] = п.ось === 'z' ? [dx, dz, dy] : п.ось === 'x' ? [dy, dx, dz] : [dx, dy, dz]; return Math.hypot(Math.hypot(a, c) - п.R, b) - п.r; }
+    case 'капс': { const ax = п.a[0], ay = п.a[1], az = п.a[2], bx = п.b[0] - ax, by = п.b[1] - ay, bz = п.b[2] - az, px = x - ax, py = y - ay, pz = z - az;
+      const t = Math.max(0, Math.min(1, (px*bx + py*by + pz*bz)/(bx*bx + by*by + bz*bz))); return Math.hypot(px - bx*t, py - by*t, pz - bz*t) - п.r; }
+    case 'пирамида': { if (dy < 0 || dy > п.h) return 1; const s = п.s/2*(1 - dy/п.h); return Math.max(Math.abs(dx), Math.abs(dz)) - s; }
+    case 'крыша': { if (dy < 0 || dy > п.h) return 1; const s = п.w/2*(1 - dy/п.h); return Math.max(Math.abs(dx) - s, Math.abs(dz) - п.d/2); }
+    case 'сердце': { const X = dx/п.r, Y = dy/п.r, Z = dz/п.r;              // классическое «сердце»: (x²+9/4·z²+y²−1)³ − x²·y³ − 9/80·z²·y³
+      const a = X*X + 2.25*Z*Z + Y*Y - 1; return a*a*a - X*X*Y*Y*Y - 0.1125*Z*Z*Y*Y*Y; }
+    case 'знак': { if (Math.abs(dz) > п.толщ/2) return 1; const u = Math.floor((dx/п.ш + 0.5)*п.N), v = Math.floor((1 - dy/п.в)*п.N);
+      return u >= 0 && v >= 0 && u < п.N && v < п.N && п.маска[v*п.N + u] ? -1 : 1; }
+  }
+  return 1;
+}
+function внутриФигуры(ф, x, y, z) {
+  let в = false;
+  for (const п of ф.тела) { if (п.минус) continue; if (ВнутриТела(п, x, y, z) < 0) { в = true; break; } }
+  if (!в) return false;
+  for (const п of ф.тела) if (п.минус && ВнутриТела(п, x, y, z) < 0) return false;
+  return true;
 }
 const СЛОВАРЬ = {
-  кот: изРисунка(['..#......#..','..##....##..','..########..','.##########.','.#.##..##.#.',
-                  '.##########.','..##.##.##..','..########..','..##....##..','.####..####.']),
-  домик: изРисунка(['.....##.....','....####....','...######...','..########..','.##########.',
-                    '.##########.','.##########.','.###..##.##.','.###..##.##.','.###..#####.']),
-  ракета: изРисунка(['.....##.....','....####....','....####....','...######...','...######...',
-                     '...######...','..#.####.#..','.##.####.##.','....####....','.....##.....']),
-  сердце: изРисунка(['..##....##..','.####..####.','.##########.','.##########.','.##########.',
-                     '..########..','...######...','....####....','.....##.....']),
-  ёлка: изРисунка(['.....##.....','....####....','...######...','....####....','...######...',
-                   '..########..','...######...','..########..','.##########.','.....##.....','.....##.....']),
-  звезда: изРисунка(['.....##.....','.....##.....','....####....','.##########.','.##########.',
-                     '..########..','...######...','..###..###..','.###....###.']),
-  робот: изРисунка(['....#..#....','.##########.','.#.##..##.#.','.##########.','..########..',
-                    '.##########.','.##########.','.##########.','..##....##..','.###....###.']),
-  чашка: изРисунка(['.########...','.########.#.','.########.#.','.########.#.','.########...',
-                    '.########...','..######....','.##########.']),
-  рыба: изРисунка(['....####....','..########..','.##########.','.#.#######.#','.##########.',
-                   '..########..','....####....']),
-  цветок: изРисунка(['....####....','...######...','..##.##.##..','.##########.','..##.##.##..',
-                     '...######...','.....##.....','.....##.....','....####....']),
-  машина: изРисунка(['...######...','..########..','.##########.','.##########.','.##########.',
-                     '..##....##..','.####..####.','..##....##..']),
-  гриб: изРисунка(['...######...','..########..','.##########.','.##########.','..########..',
-                   '....####....','....####....','....####....','...######...']),
-  пылесос: изРисунка(['.........##.','........##..','.......##...','......##....','.####.##....',
-                      '.########...','.##########.','.##########.','.#.######.#.']),
-  /* 🤖 робот-пылесос — низкий круглый купол на колёсиках (тема Марка) */
-  'робот-пылесос': изРисунка(['............','...######...','..########..','.##########.',
-                              '.##########.','.##########.','.#.######.#.']),
+  шар:[ст('шар', { y:4.6, r:4.6 })],
+  куб:[ст('кор', { y:3.6, sx:7.2, sy:7.2, sz:7.2, r:0.5 })],
+  пирамида:[ст('пирамида', { y:0, s:9, h:8 })],
+  конус:[ст('кон', { y:4.5, r1:4.2, r2:0, h:9 })],
+  цилиндр:[ст('цил', { y:4, r:3.4, h:8 })],
+  бублик:[ст('тор', { y:1.7, R:3.6, r:1.7 })],
+  снеговик:[ст('шар', { y:2.8, r:2.8 }), ст('шар', { y:6.7, r:2 }), ст('шар', { y:9.7, r:1.35 }), ст('кон', { x:0, y:9.7, z:1.7, r1:0.35, r2:0, h:1.4 }), ст('цил', { y:11.3, r:0.9, h:1.1 })],
+  кот:[ст('эллипс', { y:2.9, rx:2.6, ry:2.9, rz:2.3 }), ст('шар', { y:6.7, z:0.4, r:2.1 }), ст('кон', { x:-1.1, y:8.9, z:0.4, r1:0.85, r2:0, h:1.7 }), ст('кон', { x:1.1, y:8.9, z:0.4, r1:0.85, r2:0, h:1.7 }),
+       ст('капс', { a:[0, 0.9, -2], b:[0.9, 5, -3.6], r:0.55 }), ст('капс', { a:[-1.1, 0.6, 1.6], b:[-1.1, 0.6, 2.4], r:0.65 }), ст('капс', { a:[1.1, 0.6, 1.6], b:[1.1, 0.6, 2.4], r:0.65 })],
+  домик:[ст('кор', { y:3, sx:8, sy:6, sz:7, r:0.2 }), ст('крыша', { y:6, w:9.2, h:4, d:7.8 }), ст('кор', { x:2.3, y:8.4, sx:1.3, sy:3, sz:1.3 }), ст('кор', { y:1.3, z:3.3, sx:1.8, sy:2.6, sz:1, минус:true })],
+  ракета:[ст('цил', { y:4.6, r:2, h:7.2 }), ст('кон', { y:9.7, r1:2, r2:0, h:3 }), ст('кор', { x:2.6, y:1.6, sx:1.4, sy:3.2, sz:0.45 }), ст('кор', { x:-2.6, y:1.6, sx:1.4, sy:3.2, sz:0.45 }),
+          ст('кор', { z:2.6, y:1.6, sx:0.45, sy:3.2, sz:1.4 }), ст('кор', { z:-2.6, y:1.6, sx:0.45, sy:3.2, sz:1.4 }), ст('кон', { y:0.5, r1:1.3, r2:1.8, h:1 })],
+  ёлка:[ст('цил', { y:0.9, r:0.9, h:1.8 }), ст('кон', { y:3.4, r1:4.4, r2:1.4, h:3.4 }), ст('кон', { y:6.1, r1:3.4, r2:0.9, h:3 }), ст('кон', { y:8.7, r1:2.4, r2:0, h:3 }), ст('шар', { y:10.5, r:0.65 })],
+  сердце:[ст('сердце', { y:4.8, r:4.4 })],
+  робот:[ст('кор', { y:4.4, sx:4.6, sy:4.4, sz:3, r:0.4 }), ст('кор', { y:8, sx:3.4, sy:2.7, sz:2.7, r:0.4 }), ст('цил', { y:10, r:0.18, h:1.4 }), ст('шар', { y:10.8, r:0.45 }),
+         ст('капс', { a:[-3, 6, 0], b:[-3.4, 3, 0], r:0.6 }), ст('капс', { a:[3, 6, 0], b:[3.4, 3, 0], r:0.6 }), ст('кор', { x:-1.2, y:1.1, sx:1.4, sy:2.2, sz:1.8 }), ст('кор', { x:1.2, y:1.1, sx:1.4, sy:2.2, sz:1.8 })],
+  чашка:[ст('цил', { y:2.9, r:3, h:5.8 }), ст('цил', { y:3.5, r:2.3, h:5.4, минус:true }), ст('тор', { x:3.3, y:3.1, R:1.5, r:0.5, ось:'z' })],
+  рыба:[ст('эллипс', { y:3.2, rx:4, ry:2.6, rz:1.4 }), ст('капс', { a:[-3.6, 3.2, 0], b:[-5.6, 5, 0], r:0.6 }), ст('капс', { a:[-3.6, 3.2, 0], b:[-5.6, 1.4, 0], r:0.6 }), ст('эллипс', { x:0, y:5.6, rx:1.6, ry:0.9, rz:0.4 })],
+  цветок:[ст('цил', { y:3, r:0.4, h:6 }), ст('шар', { y:7.2, r:1.2 }),
+          ...[0, 1, 2, 3, 4, 5].map(i => ст('эллипс', { x:Math.cos(i*Math.PI/3)*2, y:7.2 + Math.sin(i*Math.PI/3)*2, rx:1.3, ry:1.3, rz:0.5 })), ст('эллипс', { x:1.4, y:2.6, rx:1.4, ry:0.45, rz:0.7 })],
+  машина:[ст('кор', { y:2.3, sx:9, sy:2.2, sz:4.4, r:0.5 }), ст('кор', { x:-0.5, y:4.2, sx:5, sy:2.2, sz:4, r:0.6 }),
+          ст('цил', { x:-2.9, y:1.2, z:2.2, r:1.2, h:0.9, ось:'z' }), ст('цил', { x:2.9, y:1.2, z:2.2, r:1.2, h:0.9, ось:'z' }), ст('цил', { x:-2.9, y:1.2, z:-2.2, r:1.2, h:0.9, ось:'z' }), ст('цил', { x:2.9, y:1.2, z:-2.2, r:1.2, h:0.9, ось:'z' })],
+  гриб:[ст('цил', { y:2.6, r:1.3, h:5.2 }), ст('шар', { y:5, r:4 }), ст('кор', { y:3, sx:9, sy:4, sz:9, минус:true }), ст('цил', { y:5.15, r:1.3, h:0.3 })],
+  пылесос:[ст('капс', { a:[-2.4, 2.6, 0], b:[2.2, 2.6, 0], r:2.1 }), ст('цил', { x:-1.8, y:0.7, z:1.8, r:0.7, h:0.6, ось:'z' }), ст('цил', { x:-1.8, y:0.7, z:-1.8, r:0.7, h:0.6, ось:'z' }),
+           ст('капс', { a:[4, 3, 0], b:[5, 6, 0], r:0.7 }), ст('капс', { a:[5, 6, 0], b:[4.6, 9, 0], r:0.6 }), ст('капс', { a:[4.6, 9, 0], b:[3, 10.6, 0], r:0.55 }), ст('кор', { x:2.4, y:10.9, sx:2.2, sy:0.9, sz:2.6, r:0.3 }), ст('капс', { a:[-1, 4.6, 0], b:[1, 4.6, 0], r:0.5 })],
+  'робот-пылесос':[ст('цил', { y:0.9, r:4.6, h:1.8 }), ст('цил', { y:2, z:1.4, r:1, h:0.6 }), ст('кор', { y:1.2, z:4.4, sx:3, sy:0.9, sz:0.6 })],
+  яблоко:[ст('шар', { y:4, r:4 }), ст('шар', { y:8.4, r:1.3, минус:true }), ст('капс', { a:[0, 6.6, 0], b:[0.4, 9, 0], r:0.3 }), ст('эллипс', { x:1.3, y:8.6, rx:1.1, ry:0.3, rz:0.6 })],
+  уточка:[ст('эллипс', { y:2.6, rx:3.6, ry:2.4, rz:2.6 }), ст('шар', { x:1.9, y:5.6, r:1.8 }), ст('эллипс', { x:3.8, y:5.3, rx:1, ry:0.35, rz:0.8 }), ст('капс', { a:[-3.4, 2.8, 0], b:[-4.4, 4.2, 0], r:0.6 })],
 };
-/* синонимы — чтобы принтер узнавал слово в разных видах */
-const СИНОНИМЫ = { кошка:'кот', котик:'кот', дом:'домик', домa:'домик', ёлочка:'ёлка', елка:'ёлка',
-  ёлк:'ёлка', сердечко:'сердце', звёздочка:'звезда', звездочка:'звезда', звёзда:'звезда',
-  робопылесос:'робот-пылесос', 'робот пылесос':'робот-пылесос', вихрь3000:'пылесос',
-  машинка:'машина', авто:'машина', тачка:'машина', рыбка:'рыба', цветочек:'цветок',
-  грибок:'гриб', робик:'робот', ракетка:'ракета', кружка:'чашка', пылик:'пылесос', вихрь:'пылесос' };
+const СИНОНИМЫ = { мяч:'шар', шарик:'шар', кубик:'куб', бублик:'бублик', пончик:'бублик', тор:'бублик', кошка:'кот', котик:'кот', дом:'домик', ёлочка:'ёлка', елка:'ёлка',
+  сердечко:'сердце', робик:'робот', ракетка:'ракета', кружка:'чашка', рыбка:'рыба', цветочек:'цветок', машинка:'машина', авто:'машина', тачка:'машина', грибок:'гриб',
+  вихрь:'пылесос', вихрь3000:'пылесос', пылик:'пылесос', робопылесос:'робот-пылесос', 'робот пылесос':'робот-пылесос', уточка:'уточка', утка:'уточка', яблочко:'яблоко', банка:'цилиндр' };
 function хеш(с) { let h = 2166136261; for (let i = 0; i < с.length; i++) { h ^= с.charCodeAt(i); h = Math.imul(h, 16777619); } return h >>> 0; }
 function ГПСЧ(семя) { let a = семя >>> 0; return () => { a |= 0; a = a + 0x6D2B79F5 | 0;
   let t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
   return ((t ^ t >>> 14) >>> 0) / 4294967296; }; }
-/* 🔤 печатаем сам знак: «Ы» или «7» становятся объёмной фигурой */
-function изЗнаков(текст) {
-  const c = document.createElement('canvas'); c.width = Ш; c.height = 14;
-  const g = c.getContext('2d');
-  g.fillStyle = '#000'; g.font = 'bold 13px system-ui'; g.textAlign = 'center'; g.textBaseline = 'middle';
-  g.fillText(текст, Ш/2, 7);
-  const д = g.getImageData(0, 0, Ш, 14).data, сетка = [];
-  for (let y = 0; y < 14; y++) { const ряд = [];
-    for (let x = 0; x < Ш; x++) ряд.push(д[(y*Ш + x)*4 + 3] > 90 ? 1 : 0);
-    сетка.push(ряд); }
-  return сетка.filter(р => р.some(v => v)) ;
+/* 🔤 печатаем сам знак — объёмным: рисуем на холсте, а толщина настоящая (как напечатанные буквы) */
+function знакТело(текст, N) {
+  N = N || 64; const c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d');
+  g.fillStyle = '#000'; g.textAlign = 'center'; g.textBaseline = 'middle'; let размер = N*0.95; g.font = '900 ' + размер + 'px system-ui, Arial Black, sans-serif';
+  while (g.measureText(текст).width > N*0.95 && размер > 8) { размер -= 2; g.font = '900 ' + размер + 'px system-ui, Arial Black, sans-serif'; }
+  g.fillText(текст, N/2, N*0.54); const д = g.getImageData(0, 0, N, N).data, маска = new Uint8Array(N*N);
+  for (let i = 0; i < N*N; i++) маска[i] = д[i*4 + 3] > 110 ? 1 : 0;
+  return ст('знак', { y:0, маска, N, ш:9.5, в:9.5, толщ:2.6 });
 }
-/* 🧪 принтер изобретает: симметричная фигура с «лапами» и «шипами» */
+/* ⭐ звезда — тоже «знак»: пятиконечник на холсте, толщина настоящая */
+function звездаТело() { const N = 64, c = document.createElement('canvas'); c.width = c.height = N; const g = c.getContext('2d'); g.beginPath();
+  for (let i = 0; i < 10; i++) { const r = i % 2 ? N*0.2 : N*0.48, a = -Math.PI/2 + i*Math.PI/5; g.lineTo(N/2 + Math.cos(a)*r, N*0.53 + Math.sin(a)*r); } g.closePath(); g.fill();
+  const д = g.getImageData(0, 0, N, N).data, маска = new Uint8Array(N*N); for (let i = 0; i < N*N; i++) маска[i] = д[i*4 + 3] > 110 ? 1 : 0;
+  return ст('знак', { y:0, маска, N, ш:10, в:10, толщ:2.4 }); }
+/* 🧪 принтер изобретает тело: симметрично складывает простые формы по «отпечатку» слова */
 function изобрести(слово) {
-  const rnd = ГПСЧ(хеш(слово));
-  const h = 8 + Math.floor(rnd()*5), сетка = [];
-  let ширина = 2 + Math.floor(rnd()*2);
-  for (let y = 0; y < h; y++) {
-    ширина = Math.max(1, Math.min(5, ширина + (rnd() < 0.5 ? 1 : -1)));
-    const ряд = new Array(Ш).fill(0);
-    for (let k = 0; k < ширина; k++) { ряд[Ш/2 - 1 - k] = 1; ряд[Ш/2 + k] = 1; }
-    if (rnd() < 0.35) { const л = Math.max(0, Ш/2 - 1 - ширина - 1);
-      ряд[л] = 1; ряд[Ш - 1 - л] = 1; }                 // лапы-шипы
-    сетка.push(ряд);
-  }
-  return сетка;
+  const r = ГПСЧ(хеш(слово)), тела = [], к = 3 + Math.floor(r()*4);
+  тела.push(ст(['шар', 'кор', 'цил', 'кон'][Math.floor(r()*4)] === 'шар' ? 'шар' : 'кор', { y:2.4, r:2.4, sx:5, sy:4.4, sz:4, }));
+  let y = 4.4;
+  for (let i = 0; i < к; i++) { const вид = Math.floor(r()*5), s = 1.2 + r()*1.6;
+    if (вид === 0) тела.push(ст('шар', { y:y + s*0.6, r:s }));
+    else if (вид === 1) тела.push(ст('кор', { y:y + s*0.5, sx:s*2.2, sy:s, sz:s*1.8, r:0.3 }));
+    else if (вид === 2) тела.push(ст('кон', { y:y + s, r1:s*1.2, r2:r() < 0.5 ? 0 : s*0.4, h:s*2 }));
+    else if (вид === 3) { const ш = 2 + r()*2.5; тела.push(ст('капс', { a:[-ш, y + 0.5, 0], b:[-ш - 1, y + 2.6, 0], r:0.55 }), ст('капс', { a:[ш, y + 0.5, 0], b:[ш + 1, y + 2.6, 0], r:0.55 })); }
+    else тела.push(ст('тор', { y:y + 0.5, R:1.8 + r()*1.5, r:0.5 }));
+    y += s*(вид === 2 ? 1.6 : 1.1); if (y > 10.5) break; }
+  return тела;
 }
 function сделатьФигуру(ввод) {
-  const т = (ввод || '').trim();
-  const к = т.toLowerCase().replace(/ё/g, 'ё');
-  const ключ = СЛОВАРЬ[к] ? к : (СИНОНИМЫ[к] && СЛОВАРЬ[СИНОНИМЫ[к]] ? СИНОНИМЫ[к] : null);
-  if (ключ) return { сетка:СЛОВАРЬ[ключ], откуда:'словарь', имя:т };
-  if (т.length >= 1 && т.length <= 3) {
-    const с = изЗнаков(т.toUpperCase());
-    if (с.length) return { сетка:с, откуда:'знак', имя:т };
-  }
-  return { сетка:изобрести(т || '?'), откуда:'изобретено', имя:т || '?' };
+  const т = (ввод || '').trim(), к = т.toLowerCase();
+  const ключ = СЛОВАРЬ[к] ? к : СИНОНИМЫ[к] && СЛОВАРЬ[СИНОНИМЫ[к]] ? СИНОНИМЫ[к] : (к === 'звезда' || к === 'звёздочка' || к === 'звездочка' || к === 'звёзда') ? 'звезда' : null;
+  let тела, откуда;
+  if (ключ === 'звезда') { тела = [звездаТело()]; откуда = 'словарь'; }
+  else if (ключ) { тела = СЛОВАРЬ[ключ]; откуда = 'словарь'; }
+  else if (т.length >= 1 && т.length <= 3) { тела = [знакТело(т.toUpperCase())]; откуда = 'знак'; }
+  else { тела = изобрести(т || '?'); откуда = 'изобретено'; }
+  return { тела, откуда, имя:т || '?' };
 }
 function знаетЛи(ввод) {
   const ф = сделатьФигуру(ввод);
-  return ф.откуда === 'словарь' ? '✅ Такое принтер знает наизусть'
-       : ф.откуда === 'знак'    ? '🔤 Напечатаю сам этот знак — объёмным'
-       : '🧪 Такого принтер не знает — изобретёт свою фигуру';
+  return ф.откуда === 'словарь' ? '✅ Такое принтер знает — напечатает настоящее объёмное'
+       : ф.откуда === 'знак'    ? '🔤 Напечатаю сам этот знак — объёмным, как настоящую букву'
+       : '🧪 Такого принтер не знает — изобретёт своё объёмное тело';
+}
+/* 🔪 СЛАЙСЕР: режет тело на слои и строчки — как программа настоящего принтера.
+   Слой — горизонтальный срез; в нём строчки шириной с валик пластика; в строчке — клетки «нужен пластик / пусто». */
+const КЛ = 0.5, ВАЛИК = 1.0;                                   // клетка по X и ширина валика (шаг строчек по Z)
+function нарезать(ф) {
+  // габариты тела — пробами
+  let xmin = 99, xmax = -99, zmin = 99, zmax = -99, ymax = 0;
+  for (let y = 0.15; y < 14; y += 0.3) for (let x = -7; x <= 7; x += 0.25) for (let z = -7; z <= 7; z += 0.25)
+    if (внутриФигуры(ф, x, y, z)) { xmin = Math.min(xmin, x); xmax = Math.max(xmax, x); zmin = Math.min(zmin, z); zmax = Math.max(zmax, z); ymax = Math.max(ymax, y); }
+  if (xmax < xmin) { xmin = -1; xmax = 1; zmin = -1; zmax = 1; ymax = 1; }
+  const N = Math.max(12, Math.min(24, Math.round((ymax + 0.2)/0.55))), h = (ymax + 0.2)/N;
+  const nx = Math.ceil((xmax - xmin)/КЛ) + 3, x0 = xmin - КЛ, zr0 = zmin + ВАЛИК*0.4, nz = Math.max(1, Math.round((zmax - zmin)/ВАЛИК) + 1);
+  const слои = [];
+  for (let i = 0; i < N; i++) { const y = (i + 0.5)*h, строки = [];
+    for (let j = 0; j < nz; j++) { const z = zr0 + j*ВАЛИК, клетки = new Uint8Array(nx); let есть = false;
+      for (let k = 0; k < nx; k++) { const x = x0 + (k + 0.5)*КЛ; if (внутриФигуры(ф, x, y, z) || внутриФигуры(ф, x, y, z + ВАЛИК*0.3) || внутриФигуры(ф, x, y, z - ВАЛИК*0.3)) { клетки[k] = 1; есть = true; } }
+      if (есть) строки.push({ j, z, клетки }); }
+    слои.push({ i, y, строки }); }
+  // у каждой строчки — откуда до куда едет сопло (весь размах слоя, чтобы были и пустые места — там отпускать)
+  for (const с of слои) { let л = nx, п = -1; for (const s of с.строки) for (let k = 0; k < nx; k++) if (s.клетки[k]) { л = Math.min(л, k); п = Math.max(п, k); }
+    с.от = Math.max(0, л - 3); с.до = Math.min(nx - 1, п + 3); }
+  return { N, h, nx, x0, слои: слои.filter(с => с.строки.length), высота:ymax };
 }
 
 /* ═══════════ 🎨 ЦВЕТА ═══════════ */
@@ -265,133 +319,6 @@ function рисоватьЦвета() {
     d.style.color = '#0b111a'; d.textContent = имя;
     с.appendChild(d);
   });
-}
-const цветСлоя = (y, h) => {
-  const k = выбраны.length;
-  const доля = h <= 1 ? 0 : (h - 1 - y) / (h - 1);     // 0 — низ, 1 — верх
-  return выбраны[Math.min(k - 1, Math.floor(доля * k))];
-};
-
-/* ═══════════ 🖨 ПЕЧАТЬ ═══════════ */
-const холст = $('холст'), ктx = холст.getContext('2d');
-let печ = null;
-function начатьПечать(ввод, дуэльный) {
-  const ф = сделатьФигуру(ввод);
-  const сетка = ф.сетка, H = сетка.length;
-  печ = { ф, сетка, H, y: H - 1, x: 0, дир: 1, скорость: 5.2,
-    готово: сетка.map(р => р.map(() => 0)),
-    верно: 0, сопли: 0, темп: 0, t0: performance.now(), идёт: true, дуэльный: !!дуэльный };
-  показать('печЭкран');
-  музыка(дуэльный ? 'бой' : 'спокойно');       // 🔊 один — спокойная, дуэль — боевая
-  $('тапни').textContent = '👆 ТАПАЙ, когда сопло над нужным местом!';
-  цикл();
-}
-function нужноВРяду(y) { return печ.сетка[y].reduce((a, v, i) => a + (v && !печ.готово[y][i] ? 1 : 0), 0); }
-function тапнул() {
-  if (!печ || !печ.идёт) return;
-  const x = Math.round(печ.x), y = печ.y;
-  if (x < 0 || x >= Ш) return;
-  if (печ.сетка[y][x] && !печ.готово[y][x]) {
-    печ.готово[y][x] = 1; печ.верно++;
-    печ.темп = Math.min(1, печ.темп + 0.06);
-    писк(680 + (H_доля() * 300), 0.05);
-  } else {
-    печ.сопли++; печ.темп = Math.min(1, печ.темп + 0.16);
-    писк(150, 0.12);
-  }
-  if (нужноВРяду(y) === 0) {                      // слой готов — поднимаемся
-    if (y === 0) { кончитьПечать(); return; }
-    печ.y--; печ.скорость += 0.35;
-    писк(980, 0.09);
-  }
-}
-function H_доля() { return печ ? (печ.H - печ.y) / печ.H : 0; }
-холст.addEventListener('pointerdown', e => { e.preventDefault(); тапнул(); });
-addEventListener('keydown', e => { if (e.code === 'Space' && печ && печ.идёт) { e.preventDefault(); тапнул(); } });
-
-let кадр = null;
-function цикл() {
-  cancelAnimationFrame(кадр);
-  let прошл = performance.now();
-  const шаг = () => {
-    кадр = requestAnimationFrame(шаг);
-    const t = performance.now(), dt = Math.min(0.05, (t - прошл) / 1000); прошл = t;
-    if (!печ || !печ.идёт) return;
-    печ.x += печ.дир * печ.скорость * dt;
-    if (печ.x > Ш - 0.5) { печ.x = Ш - 0.5; печ.дир = -1; }
-    if (печ.x < -0.5) { печ.x = -0.5; печ.дир = 1; }
-    печ.темп = Math.max(0, печ.темп - dt * 0.35);
-    рисоватьПечать();
-  };
-  шаг();
-}
-function скруг(x, y, w, h, r) {
-  ктx.beginPath();
-  if (ктx.roundRect) { ктx.roundRect(x, y, w, h, r); return; }
-  ктx.moveTo(x + r, y); ктx.lineTo(x + w - r, y); ктx.quadraticCurveTo(x + w, y, x + w, y + r);
-  ктx.lineTo(x + w, y + h - r); ктx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
-  ктx.lineTo(x + r, y + h); ктx.quadraticCurveTo(x, y + h, x, y + h - r);
-  ктx.lineTo(x, y + r); ктx.quadraticCurveTo(x, y, x + r, y); ктx.closePath();
-}
-function рисоватьПечать() {
-  const W = холст.width, Hp = холст.height;
-  ктx.clearRect(0, 0, W, Hp);
-  const кл = Math.min((W - 80) / Ш, (Hp - 150) / печ.H);
-  const x0 = (W - кл * Ш) / 2, y0 = 92;
-  // стол
-  ктx.fillStyle = '#1b2740'; ктx.fillRect(x0 - 16, y0 + кл * печ.H, кл * Ш + 32, 16);
-  // будущая фигура — бледным контуром
-  for (let y = 0; y < печ.H; y++) for (let x = 0; x < Ш; x++) {
-    if (!печ.сетка[y][x]) continue;
-    const X = x0 + x * кл, Y = y0 + y * кл;
-    if (печ.готово[y][x]) {
-      /* 🧵 уложенный пластик — не квадрат, а валик со скруглением и бликом:
-         соседние валики сливаются в сплошную полоску, как на настоящей печати. */
-      const сосед = печ.готово[y][x - 1], сосед2 = печ.готово[y][x + 1];
-      const л = сосед ? 0 : 2, п = сосед2 ? 0 : 2;
-      ктx.fillStyle = цветСлоя(y, печ.H);
-      скруг(X + л, Y + 1.5, кл - л - п, кл - 3, Math.min(5, кл * 0.28));
-      ктx.fill();
-      const бл = ктx.createLinearGradient(0, Y, 0, Y + кл);
-      бл.addColorStop(0, '#ffffff55'); бл.addColorStop(0.45, '#ffffff18'); бл.addColorStop(1, '#00000033');
-      ктx.fillStyle = бл;
-      скруг(X + л, Y + 1.5, кл - л - п, кл - 3, Math.min(5, кл * 0.28));
-      ктx.fill();
-    }
-    else if (y === печ.y) { ктx.strokeStyle = '#7dd3fc'; ктx.lineWidth = 2;
-      ктx.strokeRect(X + 2, Y + 2, кл - 4, кл - 4); }
-    else { ктx.fillStyle = '#ffffff12'; ктx.fillRect(X + 2, Y + 2, кл - 4, кл - 4); }
-  }
-  // сопло
-  const сx = x0 + (печ.x + 0.5) * кл, сy = y0 + печ.y * кл;
-  ктx.fillStyle = '#9aa6b8';
-  ктx.fillRect(сx - 16, сy - 54, 32, 34);
-  ктx.beginPath(); ктx.moveTo(сx - 10, сy - 20); ктx.lineTo(сx + 10, сy - 20);
-  ктx.lineTo(сx, сy - 4); ктx.closePath();
-  ктx.fillStyle = печ.темп > 0.7 ? '#ff6a4d' : '#c3cbd8'; ктx.fill();
-  // 🧵 нить пластика из сопла
-  ктx.strokeStyle = цветСлоя(печ.y, печ.H); ктx.lineWidth = Math.max(2, кл * 0.16);
-  ктx.beginPath(); ктx.moveTo(сx, сy - 6); ктx.lineTo(сx, сy + кл * 0.55); ктx.stroke();
-  // рельса
-  ктx.fillStyle = '#2a3752'; ктx.fillRect(x0 - 24, сy - 62, кл * Ш + 48, 8);
-  // подписи
-  $('бСлой').textContent = 'Слой ' + (печ.H - печ.y) + ' из ' + печ.H;
-  const всего = печ.верно + печ.сопли;
-  const кач = всего ? Math.round(печ.верно / всего * 100) : 100;
-  $('бКач').textContent = 'Качество ' + кач + '%';
-  $('бТемп').textContent = печ.темп > 0.7 ? '🌡 ПЕРЕГРЕВ!' : (печ.темп > 0.4 ? '🌡 греется' : '🌡 норма');
-}
-function кончитьПечать() {
-  печ.идёт = false;
-  cancelAnimationFrame(кадр);
-  const всего = печ.верно + печ.сопли;
-  const качество = всего ? печ.верно / всего : 1;
-  const секунды = (performance.now() - печ.t0) / 1000;
-  const очки = Math.round(качество * 700 + Math.max(0, 300 - секунды * 4));
-  const итог = { слово: печ.ф.имя, откуда: печ.ф.откуда, цвета: выбраны.slice(),
-    сетка: печ.сетка, качество: Math.round(качество * 100), сопли: печ.сопли,
-    секунды: Math.round(секунды), очки, когда: Date.now() };
-  if (печ.дуэльный) дуэльГотово(итог); else { вПолку(итог); показатьФигуру(итог, 'печать'); }
 }
 /* ═══════════ 🔊 МУЗЫКА ═══════════
    Две темы, обе синтезом — файлов нет, значит работает и без интернета.
@@ -472,156 +399,328 @@ function писк(f, д) { try { const A = писк._a || (писк._a = new (wi
   g.gain.value = 0.05; o.connect(g); g.connect(A.destination); o.start();
   o.stop(A.currentTime + (д || 0.06)); } catch (_) {} }
 
-/* ═══════════ 🔄 ОБЪЁМНЫЙ ПРОСМОТР ═══════════ */
-const renderer = new THREE.WebGLRenderer({ canvas: $('cv3d'), antialias: true, alpha: false });
-renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
-const сцена = new THREE.Scene(); сцена.background = new THREE.Color(0x0d1420);
-const кам = new THREE.PerspectiveCamera(50, 1, 0.1, 200);
-сцена.add(new THREE.HemisphereLight(0xdff0ff, 0x2a3242, 1.0));
-const солнце = new THREE.DirectionalLight(0xffffff, 1.5); солнце.position.set(6, 12, 8); сцена.add(солнце);
-const стойка = new THREE.Group(); сцена.add(стойка);
-let вращ = 0, самВращ = true;
-/* фигура собирается из кубиков; толщина больше в середине — получается объём, а не блин */
-function собратьФигуру(итог, смещX) {
-  const g = new THREE.Group();
-  const с = итог.сетка, H = с.length;
-  /* ⚠️ ЖАЛОБА МАРКА: фигура выходила плоской, как картонка. Теперь у неё есть
-     настоящая толщина: края потоньше, середина потолще — объём видно при вращении. */
-  const глуб = (x, y) => {
-    let d = 3;                                   // даже у самого края три кубика вглубь
-    for (let r = 1; r <= 3; r++) {
-      const ок = с[y] && с[y][x - r] && с[y][x + r] && с[y - r] && с[y - r][x] && с[y + r] && с[y + r][x];
-      if (ок) d = 3 + r * 1.6; else break;
-    }
-    return Math.min(8, d);
-  };
-  /* ⚠️ ПРОСЬБА МАРКА: «не как по кубикам, а чтобы становилось похожим на правду».
-     Настоящий принтер кладёт НЕПРЕРЫВНЫЕ полоски пластика, а не кубики. Поэтому:
-     1) подряд идущие клетки слоя сливаем в ОДНУ полоску;
-     2) у полоски скруглённые края (bevel) — как остывший пластик;
-     3) между слоями оставляем волосок зазора — те самые слоистые полоски на печати. */
-  const маты = {};
-  const ТОЛЩ = 0.97;                       // слои лежат плотно, шов виден тонкой полоской
-  for (let y = 0; y < H; y++) {
-    const ц = цветСлояДля(итог, y, H);
-    const м = маты[ц] || (маты[ц] = new THREE.MeshStandardMaterial({
-      color: ц, roughness: 0.42, metalness: 0.05 }));
-    let x = 0;
-    while (x < Ш) {
-      if (!с[y][x]) { x++; continue; }
-      let к = x; while (к + 1 < Ш && с[y][к + 1]) к++;          // полоска от x до к
-      const дл = к - x + 1;
-      let d = 0; for (let i = x; i <= к; i++) d = Math.max(d, глуб(i, y));
-      const ш = дл - 0.02, в = ТОЛЩ;
-      const форма = new THREE.Shape();
-      const r = Math.min(0.22, ш/2, в/2);                        // скругление краёв
-      форма.moveTo(-ш/2 + r, -в/2);
-      форма.lineTo(ш/2 - r, -в/2); форма.quadraticCurveTo(ш/2, -в/2, ш/2, -в/2 + r);
-      форма.lineTo(ш/2, в/2 - r);  форма.quadraticCurveTo(ш/2, в/2, ш/2 - r, в/2);
-      форма.lineTo(-ш/2 + r, в/2); форма.quadraticCurveTo(-ш/2, в/2, -ш/2, в/2 - r);
-      форма.lineTo(-ш/2, -в/2 + r); форма.quadraticCurveTo(-ш/2, -в/2, -ш/2 + r, -в/2);
-      const гео = new THREE.ExtrudeGeometry(форма, { depth: Math.max(0.6, d - 0.3),
-        bevelEnabled: true, bevelThickness: 0.1, bevelSize: 0.1, bevelSegments: 2, curveSegments: 3 });
-      гео.center();
-      const меш = new THREE.Mesh(гео, м);
-      меш.position.set((x + к)/2 - Ш/2 + 0.5, (H - 1 - y) - H/2 + 0.5, 0);
-      g.add(меш);
-      x = к + 1;
-    }
-  }
-  g.position.x = смещX || 0;
-  return g;
+/* ═══════════ 🖨 НАСТОЯЩИЙ 3D-ПРИНТЕР (Марк 17.10: «подумай, как сделать настоящий вид 3D-принтера») ═══════════
+   Как у настоящих: рама из алюминиевых профилей, стол с золотистым покрытием ездит вперёд-назад, печатающая головка
+   (радиатор, вентилятор, обдув, латунное сопло) ездит влево-вправо, портал поднимается слой за слоем, сверху катушка
+   с пластиком, по трубке пластик идёт в головку. Пока печатаешь, камера медленно облетает принтер — фигуру видно
+   со всех сторон (Марк). А пластик ложится настоящими валиками: строчка за строчкой, слой за слоем. */
+const renderer = new THREE.WebGLRenderer({ canvas: $('cv3d'), antialias: true, alpha: false, preserveDrawingBuffer: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2)); renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace; renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.3;
+const сцена = new THREE.Scene(); сцена.background = new THREE.Color(0x0d1420); сцена.fog = new THREE.Fog(0x0d1420, 90, 200);
+const кам = new THREE.PerspectiveCamera(42, 1, 0.1, 400);
+сцена.add(new THREE.HemisphereLight(0xeaf4ff, 0x3a3428, 1.25));
+const перед = new THREE.DirectionalLight(0xfff4e0, 0.9); перед.position.set(-8, 20, 44); сцена.add(перед);   // свет со стороны зрителя — принтер не в темноте
+const солнце = new THREE.DirectionalLight(0xffffff, 1.7); солнце.position.set(18, 40, 26); солнце.castShadow = true; солнце.shadow.mapSize.set(2048, 2048);
+Object.assign(солнце.shadow.camera, { left:-30, right:30, top:30, bottom:-30, near:5, far:120 }); сцена.add(солнце);
+const заполн = new THREE.DirectionalLight(0x9fc3ff, 0.5); заполн.position.set(-20, 12, -18); сцена.add(заполн);
+// 🪞 отражения для металла: маленькая «мастерская» вокруг
+(() => { const env = new THREE.Scene(); env.add(new THREE.Mesh(new THREE.BoxGeometry(40, 20, 40), new THREE.MeshBasicMaterial({ color:new THREE.Color(0.55, 0.6, 0.7), side:THREE.BackSide })));
+  const п = (w, h, c, x, y, z, ry) => { const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color:c, side:THREE.DoubleSide })); m.position.set(x, y, z); m.rotation.y = ry || 0; env.add(m); };
+  п(16, 8, new THREE.Color(4, 4.2, 4.6), 0, 6, -19.5); п(10, 8, new THREE.Color(2, 2.2, 2.6), 19.5, 4, 0, -Math.PI/2);
+  сцена.environment = new THREE.PMREMGenerator(renderer).fromScene(env, 0.04).texture; })();
+const холстТ = (w, h, рис, повт) => { const c = document.createElement('canvas'); c.width = w; c.height = h; рис(c.getContext('2d'), w, h); const т = new THREE.CanvasTexture(c); т.colorSpace = THREE.SRGBColorSpace; т.anisotropy = 8;
+  if (повт) { т.wrapS = т.wrapT = THREE.RepeatWrapping; т.repeat.set(повт[0], повт[1]); } т.холст = c; return т; };
+const М = {
+  алюм:new THREE.MeshStandardMaterial({ color:0xb9c0c8, metalness:0.75, roughness:0.32 }),
+  чёрн:new THREE.MeshStandardMaterial({ color:0x1b1d22, roughness:0.55, metalness:0.2 }),
+  пласт:new THREE.MeshStandardMaterial({ color:0x24272e, roughness:0.6 }),
+  хром:new THREE.MeshStandardMaterial({ color:0xdfe3e8, metalness:0.9, roughness:0.15 }),
+  латунь:new THREE.MeshStandardMaterial({ color:0xc9a24a, metalness:0.85, roughness:0.25 }),
+  красн:new THREE.MeshStandardMaterial({ color:0xd23a2a, roughness:0.45 }),
+};
+const профильТ = холстТ(64, 256, (g, w, h) => { g.fillStyle = '#b9c0c8'; g.fillRect(0, 0, w, h); g.fillStyle = '#5b6470'; g.fillRect(w*0.42, 0, w*0.16, h); g.fillStyle = 'rgba(255,255,255,.35)'; g.fillRect(4, 0, 3, h); g.fillRect(w - 8, 0, 3, h); }, [1, 6]);
+const профильМ = new THREE.MeshStandardMaterial({ map:профильТ, metalness:0.7, roughness:0.35 });
+const мш = (geo, m, x, y, z, р) => { const me = new THREE.Mesh(geo, m); me.position.set(x || 0, y || 0, z || 0); me.castShadow = me.receiveShadow = true; (р || сцена).add(me); return me; };
+const НОС_Z = 3.0;                                              // где сопло по Z (стол ездит под ним)
+const ПР = { g:new THREE.Group(), стол:null, портал:null, каретка:null, сопло:new THREE.Vector3(), вент:null, экран:null, катушка:null, пластикКат:null, нить:null, трубка:null, свет:null };
+сцена.add(ПР.g);
+(function построитьПринтер() {
+  const g = ПР.g;
+  // основание с экраном и ручкой
+  мш(new THREE.BoxGeometry(34, 3.2, 30), М.чёрн, 0, -1.6 - 1.4, 0, g);
+  for (const s of [-1, 1]) мш(new THREE.BoxGeometry(2, 2, 30), профильМ, s*15, -1.4 - 0.2, 0, g);
+  const экранТ = холстТ(256, 128, (gg, w, h) => { gg.fillStyle = '#0a1a2a'; gg.fillRect(0, 0, w, h); });
+  ПР.экран = экранТ; const эк = мш(new THREE.PlaneGeometry(6.4, 3.2), new THREE.MeshBasicMaterial({ map:экранТ }), -9, -2.9, 15.06, g);
+  мш(new THREE.CylinderGeometry(0.8, 0.8, 0.8, 24), М.пласт, -3.6, -2.9, 15.3, g).rotation.x = Math.PI/2;
+  const надп = холстТ(256, 64, (gg, w, h) => { gg.clearRect(0, 0, w, h); gg.fillStyle = '#38bdf8'; gg.font = '900 40px system-ui'; gg.textAlign = 'center'; gg.fillText('МАРК-3D', w/2, 46); });
+  мш(new THREE.PlaneGeometry(6, 1.5), new THREE.MeshBasicMaterial({ map:надп, transparent:true }), 7.5, -2.9, 15.06, g);
+  // направляющая стола (ось Y) и сам стол: алюминиевая плита + золотистый PEI-лист с текстурой
+  for (const s of [-1, 1]) мш(new THREE.CylinderGeometry(0.4, 0.4, 28, 12), М.хром, s*5, -0.6, 0, g).rotation.x = Math.PI/2;
+  const стол = new THREE.Group(); g.add(стол); ПР.стол = стол;
+  мш(new THREE.BoxGeometry(23, 0.7, 23), М.алюм, 0, -0.35, 0, стол);
+  const peiТ = холстТ(512, 512, (gg, w, h) => { gg.fillStyle = '#b8862e'; gg.fillRect(0, 0, w, h); for (let i = 0; i < 14000; i++) { gg.fillStyle = `rgba(${Math.random() < 0.5 ? '255,220,140' : '90,60,20'},${Math.random()*0.25})`; gg.fillRect(Math.random()*w, Math.random()*h, 2, 2); }
+    gg.strokeStyle = 'rgba(40,25,5,.45)'; gg.lineWidth = 2; for (let k = 0; k <= 10; k++) { gg.beginPath(); gg.moveTo(k*w/10, 0); gg.lineTo(k*w/10, h); gg.moveTo(0, k*h/10); gg.lineTo(w, k*h/10); gg.stroke(); }
+    gg.fillStyle = 'rgba(40,25,5,.6)'; gg.font = 'bold 20px system-ui'; gg.fillText('PEI · 220×220', 16, h - 16); });
+  мш(new THREE.BoxGeometry(22, 0.12, 22), new THREE.MeshStandardMaterial({ map:peiТ, roughness:0.55, metalness:0.35 }), 0, 0.06, 0, стол);
+  for (const [x, z] of [[-10.5, -10.5], [10.5, -10.5], [-10.5, 10.5], [10.5, 10.5]]) мш(new THREE.CylinderGeometry(0.55, 0.55, 0.5, 14), М.латунь, x, 0.2, z, стол);   // винты подстройки
+  // рама: две стойки-профиля, верхняя перемычка, винты оси Z
+  for (const s of [-1, 1]) { мш(new THREE.BoxGeometry(2, 34, 2), профильМ, s*15, 15.6, -2, g); мш(new THREE.CylinderGeometry(0.32, 0.32, 33, 10), М.хром, s*13.3, 15.6, -2, g);
+    мш(new THREE.BoxGeometry(3.4, 3.4, 3.4), М.чёрн, s*13.3, 1.2, -2, g); }                                          // моторы оси Z
+  мш(new THREE.BoxGeometry(32, 2, 2), профильМ, 0, 33.6, -2, g);
+  // портал (ось X) с кареткой и головкой
+  const портал = new THREE.Group(); g.add(портал); ПР.портал = портал;
+  мш(new THREE.BoxGeometry(28, 1.8, 1.8), профильМ, 0, 0, 0, портал);
+  мш(new THREE.BoxGeometry(27, 0.25, 0.2), М.чёрн, 0, 0.6, 1, портал);                                                  // ремень
+  for (const s of [-1, 1]) мш(new THREE.BoxGeometry(3, 3, 3.2), М.чёрн, s*14.6, 0, 0, портал);                        // крепления к стойкам, мотор X
+  const кар = new THREE.Group(); портал.add(кар); ПР.каретка = кар;
+  мш(new THREE.BoxGeometry(3.6, 3.4, 1), М.алюм, 0, -0.2, 1.2, кар);
+  const кожух = мш(new THREE.BoxGeometry(3.8, 4.2, 2.6), М.пласт, 0, -2, 2.6, кар);
+  // радиатор с рёбрами, вентилятор (крутится), обдув, нагревательный блок, латунное сопло, синий огонёк
+  for (let i = 0; i < 7; i++) мш(new THREE.CylinderGeometry(0.9, 0.9, 0.12, 18), М.алюм, 0, -1.2 - i*0.32, 1.4, кар);
+  const вент = new THREE.Group(); вент.position.set(0, -2, 3.95); кар.add(вент); ПР.вент = вент;
+  мш(new THREE.CylinderGeometry(1.5, 1.5, 0.2, 24), М.чёрн, 0, 0, 0, вент).rotation.x = Math.PI/2;
+  for (let i = 0; i < 7; i++) { const л = мш(new THREE.BoxGeometry(0.5, 1.3, 0.06), new THREE.MeshStandardMaterial({ color:0x2b2f38, roughness:0.4 }), Math.cos(i*0.9)*0.7, Math.sin(i*0.9)*0.7, 0.14, вент); л.rotation.z = i*0.9 + 0.5; }
+  мш(new THREE.BoxGeometry(1.6, 1.2, 1.6), М.алюм, 0, -4.4, 1.5, кар);                                                 // нагревательный блок
+  мш(new THREE.ConeGeometry(0.42, 0.9, 16), М.латунь, 0, -5.4, 1.5, кар).rotation.x = Math.PI;                          // сопло
+  мш(new THREE.BoxGeometry(2.4, 0.8, 1.2), М.пласт, 1.6, -4.6, 2.4, кар);                                               // обдув детали
+  const лед = мш(new THREE.SphereGeometry(0.18, 10, 8), new THREE.MeshBasicMaterial({ color:0x38bdf8 }), -1.5, -3.6, 3.95, кар); лед.castShadow = false;
+  ПР.свет = new THREE.PointLight(0xffe8b0, 6, 9, 1.6); ПР.свет.position.set(0, -5.6, 1.5); кар.add(ПР.свет);
+  // катушка пластика на держателе сверху и трубка подачи (боуден) до головки
+  const кат = new THREE.Group(); кат.position.set(0, 37.4, -2); g.add(кат); ПР.катушка = кат;
+  for (const s of [-1, 1]) мш(new THREE.CylinderGeometry(4.2, 4.2, 0.3, 40), new THREE.MeshStandardMaterial({ color:0x111111, roughness:0.5, transparent:true, opacity:0.85 }), 0, 0, s*1.6, кат).rotation.x = Math.PI/2;
+  ПР.пластикКат = мш(new THREE.CylinderGeometry(3.5, 3.5, 3, 40), new THREE.MeshStandardMaterial({ color:0x38bdf8, roughness:0.35 }), 0, 0, 0, кат); ПР.пластикКат.rotation.x = Math.PI/2;
+  мш(new THREE.CylinderGeometry(0.5, 0.5, 4, 12), М.хром, 0, 0, 0, кат).rotation.x = Math.PI/2;
+  мш(new THREE.BoxGeometry(1, 3, 1), профильМ, 0, -2.3, 0, кат);
+  мш(new THREE.BoxGeometry(3.2, 3.2, 3.2), М.чёрн, -15, 27, 0.4, g);                                                   // экструдер (мотор подачи) на стойке
+  ПР.трубка = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ color:0xf1f5f9, roughness:0.3, transparent:true, opacity:0.85 })); g.add(ПР.трубка);
+  ПР.нить = new THREE.Mesh(new THREE.BufferGeometry(), new THREE.MeshStandardMaterial({ color:0x38bdf8, roughness:0.3 })); g.add(ПР.нить);
+  // пол мастерской
+  // принтер стоит на деревянном верстаке в мастерской
+  const деревоТ = холстТ(512, 256, (gg, w, h) => { gg.fillStyle = '#9a6b3f'; gg.fillRect(0, 0, w, h); for (let i = 0; i < 90; i++) { gg.strokeStyle = `rgba(${Math.random() < 0.5 ? '70,40,15' : '200,150,95'},${0.12 + Math.random()*0.2})`; gg.lineWidth = 1 + Math.random()*2.5;
+    const y = Math.random()*h; gg.beginPath(); gg.moveTo(0, y); for (let x = 0; x <= w; x += 32) gg.lineTo(x, y + Math.sin(x*0.02 + i)*4); gg.stroke(); }
+    gg.fillStyle = 'rgba(40,20,5,.5)'; for (let k = 1; k < 4; k++) gg.fillRect(0, k*h/4, w, 2); }, [2, 2]);
+  мш(new THREE.BoxGeometry(96, 1.8, 60), new THREE.MeshStandardMaterial({ map:деревоТ, roughness:0.75 }), 0, -5.5, 2, g);
+  for (const [x, z] of [[-45, -26], [45, -26], [-45, 30], [45, 30]]) мш(new THREE.BoxGeometry(2.4, 30, 2.4), new THREE.MeshStandardMaterial({ color:0x6b4a2b, roughness:0.8 }), x, -21.4, z, g);
+  const пол = мш(new THREE.CircleGeometry(160, 48), new THREE.MeshStandardMaterial({ color:0x262f40, roughness:0.95 }), 0, -36.4, 0); пол.rotation.x = -Math.PI/2;
+})();
+/* 🎛 поставить головку: X — каретка по порталу, Y — высота портала, Z — стол едет под соплом (как у настоящего «Эндера») */
+function головка(x, y, z) {
+  ПР.каретка.position.x = x; ПР.портал.position.set(0, y + 5.6, -2 + 3.5); ПР.стол.position.z = НОС_Z - z;
+  ПР.g.updateMatrixWorld(true); ПР.сопло.set(x, y, НОС_Z);
+  // трубка от экструдера к голове и нить от катушки к экструдеру
+  const т1 = new THREE.CatmullRomCurve3([new THREE.Vector3(-15, 27, 2), new THREE.Vector3(-12, 30, 4), new THREE.Vector3(x - 2, y + 12, 4), new THREE.Vector3(x, y + 4.2, 3)]);
+  ПР.трубка.geometry.dispose(); ПР.трубка.geometry = new THREE.TubeGeometry(т1, 30, 0.32, 8);
+  const т2 = new THREE.CatmullRomCurve3([new THREE.Vector3(0, 33.9, -0.4), new THREE.Vector3(-8, 31, 1), new THREE.Vector3(-15, 28.6, 0.4)]);
+  ПР.нить.geometry.dispose(); ПР.нить.geometry = new THREE.TubeGeometry(т2, 20, 0.1, 6);
 }
-function цветСлояДля(итог, y, H) {
+function экранПринтера(строка1, строка2) { const g = ПР.экран.холст.getContext('2d'); g.fillStyle = '#0a1a2a'; g.fillRect(0, 0, 256, 128);
+  g.fillStyle = '#7dd3fc'; g.font = 'bold 26px monospace'; g.fillText(строка1, 12, 46); g.fillStyle = '#fde68a'; g.font = 'bold 22px monospace'; g.fillText(строка2, 12, 92); ПР.экран.needsUpdate = true; }
+головка(0, 0, 0); экранПринтера('МАРК-3D', 'ГОТОВ');
+
+/* ═══════════ 🧵 ВАЛИКИ ПЛАСТИКА — так выглядит настоящая FDM-печать ═══════════
+   Каждый отрезок, где ты держишь кнопку над нужным местом, — капсула-валик длиной с этот отрезок. Валики строчки
+   лежат вплотную, слои — друг на друге: видны тонкие слоистые полоски, как у настоящих напечатанных вещей. */
+const валикГео = (() => { const g = new THREE.CylinderGeometry(0.5, 0.5, 1, 16, 1); g.rotateZ(Math.PI/2); return g; })();   // вдоль X, длина 1, Ø1 — соседние валики сливаются в сплошную стенку
+function новаяМодель(родитель) {
+  const им = new THREE.InstancedMesh(валикГео, new THREE.MeshStandardMaterial({ roughness:0.38, metalness:0.05 }), 6000); им.count = 0;
+  им.castShadow = им.receiveShadow = true; им.frustumCulled = false; (родитель || ПР.стол).add(им);
+  const сопли = new THREE.Group(); (родитель || ПР.стол).add(сопли);
+  return { им, сопли, n:0 };
+}
+const _м4 = new THREE.Matrix4(), _кв = new THREE.Quaternion(), _в = new THREE.Vector3(), _сз = new THREE.Vector3(), _цв = new THREE.Color();
+function валик(мод, i, x0, x1, y, z, h, цвет) {                // поставить (или растянуть) валик i
+  const дл = Math.max(0.2, x1 - x0);
+  _м4.compose(_в.set((x0 + x1)/2, y - h/2 + 0.12, z), _кв.identity(), _сз.set(дл + 0.06, h*1.32, ВАЛИК*1.16)); мод.им.setMatrixAt(i, _м4);   // нахлёст — стенка сплошная, но полоски слоёв видны
+  мод.им.setColorAt(i, _цв.set(цвет)); мод.им.instanceMatrix.needsUpdate = true; if (мод.им.instanceColor) мод.им.instanceColor.needsUpdate = true;
+  if (i >= мод.им.count) мод.им.count = i + 1;
+}
+function сопля(мод, x, y, z, цвет) {                           // висящая нить пластика — когда давил мимо
+  if (мод.сопли.children.length > 70) return;
+  const т = [new THREE.Vector3(x, y + 0.12, z)]; for (let k = 1; k < 5; k++) т.push(new THREE.Vector3(x + (Math.random() - 0.5)*0.9*k, y + 0.12 - k*0.35, z + (Math.random() - 0.5)*0.6));
+  const м = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(т), 12, 0.1, 5), new THREE.MeshStandardMaterial({ color:цвет, roughness:0.4 })); м.castShadow = true; мод.сопли.add(м);
+}
+/* 🧱 собрать модель по рецепту (для полки, дуэли и после печати): слои → строчки → отрезки */
+/* ✨ гладкая фигура из напечатанного: сетка «есть пластик / нет» → чуть размываем → поверхность (surface nets).
+   Берём ИМЕННО напечатанные валики: дырки и кривизна остаются, только сглаженные — как отшлифованная и покрытая лаком вещь. */
+function гладкаяМодель(итог, родитель) {
+  const ф = сделатьФигуру(итог.слово), н = нарезать(ф); let zr0 = null, maxJ = 0, maxI = 0;
+  for (const с of н.слои) for (const r of с.строки) { if (zr0 === null) zr0 = r.z - r.j*ВАЛИК; maxJ = Math.max(maxJ, r.j); maxI = Math.max(maxI, с.i); }
+  if (zr0 === null) return null;
+  const X = н.nx + 4, Y = maxI + 5, Z = maxJ + 5, ид = (x, y, z) => (z*Y + y)*X + x; let F = new Float32Array(X*Y*Z);
+  (итог.слоиПечати || []).forEach((строки, сл) => { const слой = н.слои[сл]; if (!слой) return;
+    for (const [j, a, b] of строки) { const r = слой.строки[j]; if (!r) continue; for (let k = a; k <= b; k++) F[ид(k + 2, слой.i + 2, r.j + 2)] = 1; } });
+  for (const ось of [[1, 0, 0], [0, 1, 0], [0, 0, 1]]) { const G = new Float32Array(F.length);           // мягкое размытие 1-4-1 по каждой оси
+    for (let z = 0; z < Z; z++) for (let y = 0; y < Y; y++) for (let x = 0; x < X; x++) { const v = F[ид(x, y, z)]*4;
+      const x1 = x - ось[0], y1 = y - ось[1], z1 = z - ось[2], x2 = x + ось[0], y2 = y + ось[1], z2 = z + ось[2];
+      const a = x1 >= 0 && y1 >= 0 && z1 >= 0 ? F[ид(x1, y1, z1)] : 0, b = x2 < X && y2 < Y && z2 < Z ? F[ид(x2, y2, z2)] : 0; G[ид(x, y, z)] = (v + a + b)/6; }
+    F = G; }
+  const ИЗО = 0.33, мир = (x, y, z, out) => out.set(н.x0 + (x - 1.5)*КЛ, (y - 1.5)*н.h + 0.12, zr0 + (z - 2)*ВАЛИК);   // запас 2 клетки с каждой стороны
+  const верш = [], цвета = [], инд = [], номер = new Int32Array(X*Y*Z).fill(-1), в = new THREE.Vector3(), с = new THREE.Vector3(), ц = new THREE.Color();
+  const УГЛЫ = [[0,0,0],[1,0,0],[0,1,0],[1,1,0],[0,0,1],[1,0,1],[0,1,1],[1,1,1]], РЁБРА = [[0,1],[2,3],[4,5],[6,7],[0,2],[1,3],[4,6],[5,7],[0,4],[1,5],[2,6],[3,7]];
+  for (let z = 0; z < Z - 1; z++) for (let y = 0; y < Y - 1; y++) for (let x = 0; x < X - 1; x++) {   // вершина в каждой ячейке, через которую идёт поверхность
+    const v = УГЛЫ.map(([a, b, cc]) => F[ид(x + a, y + b, z + cc)]); let внутр = 0; for (const t of v) if (t > ИЗО) внутр++; if (!внутр || внутр === 8) continue;
+    с.set(0, 0, 0); let n = 0;
+    for (const [p, q] of РЁБРА) { if ((v[p] > ИЗО) === (v[q] > ИЗО)) continue; const t = (ИЗО - v[p])/(v[q] - v[p]), A = УГЛЫ[p], B = УГЛЫ[q];
+      с.x += x + A[0] + (B[0] - A[0])*t; с.y += y + A[1] + (B[1] - A[1])*t; с.z += z + A[2] + (B[2] - A[2])*t; n++; }
+    с.multiplyScalar(1/n); мир(с.x, с.y, с.z, в); номер[ид(x, y, z)] = верш.length/3; верш.push(в.x, в.y, в.z);
+    ц.set(цветСлояДля(итог, Math.max(0, Math.min(н.N - 1, Math.round(с.y - 2))), н.N)); цвета.push(ц.r, ц.g, ц.b); }
+  const квад = (a, b, c2, d, флип) => { if (a < 0 || b < 0 || c2 < 0 || d < 0) return; if (флип) инд.push(a, c2, b, b, c2, d); else инд.push(a, b, c2, b, d, c2); };
+  for (let z = 1; z < Z - 1; z++) for (let y = 1; y < Y - 1; y++) for (let x = 1; x < X - 1; x++) { const i0 = F[ид(x, y, z)] > ИЗО;   // грань на каждом ребре со сменой знака
+    if (i0 !== (F[ид(x + 1, y, z)] > ИЗО)) квад(номер[ид(x, y - 1, z - 1)], номер[ид(x, y, z - 1)], номер[ид(x, y - 1, z)], номер[ид(x, y, z)], !i0);
+    if (i0 !== (F[ид(x, y + 1, z)] > ИЗО)) квад(номер[ид(x - 1, y, z - 1)], номер[ид(x - 1, y, z)], номер[ид(x, y, z - 1)], номер[ид(x, y, z)], !i0);
+    if (i0 !== (F[ид(x, y, z + 1)] > ИЗО)) квад(номер[ид(x - 1, y - 1, z)], номер[ид(x, y - 1, z)], номер[ид(x - 1, y, z)], номер[ид(x, y, z)], !i0); }
+  if (инд.length < 30) return null;
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.Float32BufferAttribute(верш, 3)); geo.setAttribute('color', new THREE.Float32BufferAttribute(цвета, 3));
+  geo.setIndex(инд); geo.computeVertexNormals();
+  const меш = new THREE.Mesh(geo, new THREE.MeshPhysicalMaterial({ vertexColors:true, roughness:0.2, metalness:0.05, clearcoat:1, clearcoatRoughness:0.06, side:THREE.DoubleSide }));
+  меш.castShadow = меш.receiveShadow = true; меш.userData.гладь = true; (родитель || ПР.стол).add(меш); return меш;
+}
+function модельПоРецепту(итог, родитель) {
+  if (итог.шлиф && гладкаяМодель(итог, родитель)) return null;                         // отшлифованная — с полки тоже гладкая
+  const ф = сделатьФигуру(итог.слово), н = нарезать(ф), мод = новаяМодель(родитель); let i = 0;
+  (итог.слоиПечати || []).forEach((строки, сл) => { const слой = н.слои[сл]; if (!слой) return;
+    for (const [j, a, b] of строки) { const s = слой.строки[j]; if (!s) continue; валик(мод, i++, н.x0 + a*КЛ, н.x0 + (b + 1)*КЛ, (слой.i + 1)*н.h, s.z, н.h, цветСлояДля(итог, слой.i, н.N)); } });
+  const rnd = ГПСЧ(хеш(итог.слово + итог.сопли));
+  for (let k = 0; k < Math.min(40, итог.сопли || 0); k++) { const слой = н.слои[Math.floor(rnd()*н.слои.length)]; if (!слой) break;
+    сопля(мод, н.x0 + (слой.от + rnd()*(слой.до - слой.от))*КЛ, (слой.i + 1)*н.h, слой.строки[0].z + rnd()*2, цветСлояДля(итог, слой.i, н.N)); }
+  return мод;
+}
+function цветСлояДля(итог, i, N) {
   const ц = итог.цвета && итог.цвета.length ? итог.цвета : ['#38bdf8'];
-  const доля = H <= 1 ? 0 : (H - 1 - y) / (H - 1);
-  return ц[Math.min(ц.length - 1, Math.floor(доля * ц.length))];
+  return ц[Math.min(ц.length - 1, Math.floor(i/Math.max(1, N)*ц.length))];
 }
-function размер() {
-  renderer.setSize(innerWidth, innerHeight, false);
-  кам.aspect = innerWidth / innerHeight; кам.updateProjectionMatrix();
-  if (показВключён) навестиКамеру(стойка.children.length > 1);
+
+/* ═══════════ 🖨 ПЕЧАТЬ: сопло едет по строчкам слоя; ДЕРЖИ, пока под соплом призрак фигуры, — отпускай над пустотой ═══════════
+   Попал — ровный валик. Давил мимо — сопли. Не давил там, где нужно, — дырка. Слой готов — портал поднимается,
+   а скорость растёт. Пока печатаешь, камера облетает принтер (Марк: «пока печатаешь, фигура крутится»). */
+let печ = null, держит = false;
+const призракМ = new THREE.MeshBasicMaterial({ color:0x7dd3fc, transparent:true, opacity:0.22, depthWrite:false });
+const тенеМ = new THREE.MeshBasicMaterial({ color:0x7dd3fc, transparent:true, opacity:0.08, depthWrite:false });
+function начатьПечать(ввод, дуэльный) {
+  убратьМодели(); const ф = сделатьФигуру(ввод), н = нарезать(ф);
+  const мод = новаяМодель(); const призрак = new THREE.Group(); ПР.стол.add(призрак);
+  // 👻 бледный «призрак» всей фигуры — видно, ЧТО печатаешь; и яркий — нужная часть текущего слоя
+  const весьПризрак = new THREE.InstancedMesh(new THREE.BoxGeometry(КЛ, н.h, ВАЛИК), тенеМ, 9000); let k = 0;
+  for (const с of н.слои) for (const s of с.строки) for (let x = 0; x < н.nx; x++) if (s.клетки[x] && k < 9000) { _м4.makeTranslation(н.x0 + (x + 0.5)*КЛ, (с.i + 0.5)*н.h + 0.12, s.z); весьПризрак.setMatrixAt(k++, _м4); }
+  весьПризрак.count = k; призрак.add(весьПризрак);
+  const слойПризрак = new THREE.InstancedMesh(new THREE.BoxGeometry(КЛ*0.92, 0.08, ВАЛИК*0.85), призракМ, 1500); слойПризрак.count = 0; призрак.add(слойПризрак);
+  печ = { ф, н, мод, призрак, слойПризрак, сл:0, стр:0, x:0, дир:1, скорость:8.5, бусы:0, отрезок:null, готово:[], сопли:0, нужно:0, верно:0, темп:0,
+    t0:performance.now(), идёт:true, дуэльный:!!дуэльный, вПроходе:0 };
+  for (const с of н.слои) for (const s of с.строки) for (let x = 0; x < н.nx; x++) if (s.клетки[x]) печ.нужно++;
+  печ.слоиПечати = н.слои.map(() => []); готовитьСлой();
+  показатьПринтер(); $('печHUD').classList.add('вкл'); $('держи').classList.add('вкл');
+  музыка(дуэльный ? 'бой' : 'спокойно'); экранПринтера('ПЕЧАТЬ', ф.имя.slice(0, 12));
+  $('тапни').textContent = '👆 Держи кнопку, пока сопло над голубым, — отпускай над пустотой!'; $('тапни').classList.remove('спрятан');
 }
-/* фигуру ставим ровно в центр стойки и подбираем расстояние камеры под её размер */
-function навестиКамеру(пара) {
-  /* ⚠️ ЖАЛОБА МАРКА (дважды): «фигуру не видно в центре». Причина была в том, что
-     габариты считались по НЕОБНОВЛЁННЫМ матрицам и при уже повёрнутой стойке —
-     центр выходил неверным. Теперь: сбрасываем поворот, обновляем матрицы,
-     меряем в чистом виде, центрируем и только потом возвращаем поворот. */
-  const былВращ = вращ, былНаклон = стойка.rotation.x;
-  стойка.rotation.set(0, 0, 0);
-  стойка.updateMatrixWorld(true);
-  const короб = new THREE.Box3().setFromObject(стойка);
-  if (короб.isEmpty()) { кам.position.set(0, 0, 22); кам.lookAt(0, 0, 0);
-    стойка.rotation.set(былНаклон, былВращ, 0); return; }
-  const ц = короб.getCenter(new THREE.Vector3());
-  стойка.children.forEach(д => { д.position.x -= ц.x; д.position.y -= ц.y; д.position.z -= ц.z; });
-  стойка.updateMatrixWorld(true);
-  const р = короб.getSize(new THREE.Vector3());
-  /* при вращении фигура «шире» — считаем по диагонали основания */
-  /* ⚠️ считали по диагонали (на случай любого поворота) — из-за этого фигура была
-     мелковата и Марку казалась потерянной. Берём наибольшую сторону с небольшим запасом. */
-  const ширина = Math.max(р.x, р.z) * 1.1, высота = р.y;
-  const вертФов = кам.fov * Math.PI / 180;
-  const шапка = ($('верх3d').offsetHeight || 120), низ = ($('низ3d').offsetHeight || 80);
-  const свободно = Math.max(0.35, (innerHeight - шапка - низ - 24) / innerHeight);
-  const запасВерх = свободно * 0.99;            // ровно столько, сколько реально свободно
-  const дальВыс = (высота / запасВерх) / 2 / Math.tan(вертФов / 2);
-  const гориз = 2 * Math.atan(Math.tan(вертФов / 2) * кам.aspect);
-  const дальШир = (ширина / 0.94) / 2 / Math.tan(гориз / 2);
-  const даль = Math.max(дальВыс, дальШир) * 1.08 + 2;
-  /* ⚠️ ЖАЛОБА МАРКА: фигура жалась к верху, а снизу пустовало. Центрируем её не по
-     середине ЭКРАНА, а по середине СВОБОДНОГО места — между шапкой и кнопками. */
-  const серединаСвободного = (шапка + (innerHeight - низ)) / 2;
-  const сдвигПикс = серединаСвободного - innerHeight / 2;
-  const мирНаПиксель = (2 * даль * Math.tan(вертФов / 2)) / innerHeight;
-  const ty = сдвигПикс * мирНаПиксель;
-  кам.position.set(0, ty, даль);
-  кам.lookAt(0, ty, 0);
-  стойка.rotation.set(былНаклон, былВращ, 0);
+function готовитьСлой() { const с = печ.н.слои[печ.сл], s = с.строки[печ.стр]; печ.x = печ.дир > 0 ? с.от : с.до; печ.отрезок = null;
+  let k = 0; for (const s2 of с.строки) for (let x = 0; x < печ.н.nx; x++) if (s2.клетки[x] && k < 1500) { _м4.makeTranslation(печ.н.x0 + (x + 0.5)*КЛ, (с.i + 1)*печ.н.h + 0.17, s2.z); печ.слойПризрак.setMatrixAt(k++, _м4); }
+  печ.слойПризрак.count = k; печ.слойПризрак.instanceMatrix.needsUpdate = true; }
+function шагПечати(dt) {
+  const п = печ, н = п.н, с = н.слои[п.сл], s = с.строки[п.стр]; if (!s) return;
+  if (п.авто) держит = !!s.клетки[Math.max(0, Math.min(н.nx - 1, Math.floor(п.x + п.дир*0.5)))];
+  const было = п.x; п.x += п.дир*п.скорость/КЛ*dt;                                          // в клетках
+  const от = Math.min(было, п.x), до = Math.max(было, п.x);
+  for (let k = Math.max(с.от, Math.floor(от)); k <= Math.min(с.до, Math.floor(до)); k++) {
+    if (п.проход && п.проход.has(k)) continue; (п.проход = п.проход || new Set()).add(k);
+    const нужен = !!s.клетки[k], жму = п.авто ? нужен : держит;      // автопилот (тест/показ) решает по каждой клетке
+    if (жму && нужен) { п.верно++; if (!п.отрезок) п.отрезок = { a:k, b:k, i:п.мод.n++ }; else { п.отрезок.a = Math.min(п.отрезок.a, k); п.отрезок.b = Math.max(п.отрезок.b, k); }
+      валик(п.мод, п.отрезок.i, н.x0 + п.отрезок.a*КЛ, н.x0 + (п.отрезок.b + 1)*КЛ, (с.i + 1)*н.h, s.z, н.h, цветСлояДля({ цвета:выбраны }, с.i, н.N)); п.темп = Math.min(1, п.темп + 0.01); }
+    else { if (п.отрезок) { п.слоиПечати[п.сл].push([п.стр, п.отрезок.a, п.отрезок.b]); п.отрезок = null; }
+      if (жму && !нужен) { п.сопли++; п.темп = Math.min(1, п.темп + 0.06); if (п.сопли % 3 === 1) сопля(п.мод, н.x0 + (k + 0.5)*КЛ, (с.i + 1)*н.h, s.z, цветСлояДля({ цвета:выбраны }, с.i, н.N)); писк(150, 0.05); } } }
+  головка(н.x0 + (п.x + 0.5)*КЛ, (с.i + 1)*н.h + 0.15, s.z);
+  // конец строчки — следующая строчка (змейкой); конец слоя — портал поднимается, скорость растёт
+  if ((п.дир > 0 && п.x >= с.до + 0.99) || (п.дир < 0 && п.x <= с.от)) {
+    if (п.отрезок) { п.слоиПечати[п.сл].push([п.стр, п.отрезок.a, п.отрезок.b]); п.отрезок = null; }
+    п.проход = null; п.дир = -п.дир; п.стр++;
+    if (п.стр >= с.строки.length) { п.стр = 0; п.сл++; п.скорость = Math.min(16, п.скорость + 0.35); писк(980, 0.08);
+      if (п.сл >= н.слои.length) { кончитьПечать(); return; } готовитьСлой(); if (п.сл >= 2) $('тапни').classList.add('спрятан'); экранПринтера('СЛОЙ ' + (п.сл + 1) + '/' + н.слои.length, Math.round(п.сл/н.слои.length*100) + '%'); }
+    else п.x = п.дир > 0 ? с.от : с.до;
+  }
+  п.темп = Math.max(0, п.темп - dt*0.25);
+  ПР.вент.rotation.z += dt*30; ПР.катушка.rotation.z -= держит ? dt*0.6 : 0; ПР.свет.intensity = держит ? 9 : 3;
+  ПР.пластикКат.material.color.set(цветСлояДля({ цвета:выбраны }, с.i, н.N)); ПР.нить.material.color.copy(ПР.пластикКат.material.color);
+  $('бСлой').textContent = 'Слой ' + (п.сл + 1) + ' из ' + н.слои.length;
+  $('бКач').textContent = 'Качество ' + качествоСейчас() + '%';
+  $('бТемп').textContent = п.темп > 0.7 ? '🌡 ПЕРЕГРЕВ!' : п.темп > 0.4 ? '🌡 греется' : '🌡 норма';
 }
+function качествоСейчас() { const п = печ; const пройдено = п.н.слои.slice(0, п.сл).reduce((a, с) => a + с.строки.reduce((b, s) => b + s.клетки.reduce((c, v) => c + v, 0), 0), 0) || 1;
+  return Math.max(0, Math.min(100, Math.round((п.верно/Math.max(пройдено, п.верно, 1))*100 - п.сопли*0.6))); }
+function кончитьПечать() {
+  const п = печ; п.идёт = false; $('держи').classList.remove('вкл'); $('печHUD').classList.remove('вкл'); держит = false;
+  ПР.стол.remove(п.призрак);
+  const качество = Math.max(0, Math.min(100, Math.round(п.верно/Math.max(1, п.нужно)*100 - п.сопли*0.6)));
+  const секунды = (performance.now() - п.t0)/1000, очки = Math.round(качество*7 + Math.max(0, 300 - секунды*2));
+  экранПринтера('ГОТОВО!', качество + '% · ' + Math.round(секунды) + 'с'); головка(0, п.н.высота + 6, -6);
+  const итог = { вид:'3d', слово:п.ф.имя, откуда:п.ф.откуда, цвета:выбраны.slice(), слоиПечати:п.слоиПечати, качество, сопли:п.сопли, секунды:Math.round(секунды), очки, когда:Date.now() };
+  итог.картинка = снимокМодели(); печ.итог = итог;
+  if (п.дуэльный) дуэльГотово(итог); else { вПолку(итог); показатьИтогПечати(итог); }
+}
+$('держи').addEventListener('pointerdown', e => { e.preventDefault(); e.stopPropagation(); держит = true; $('держи').classList.add('жму'); });
+const отпустить = () => { держит = false; $('держи').classList.remove('жму'); };
+addEventListener('pointerup', отпустить); addEventListener('pointercancel', отпустить);
+addEventListener('keydown', e => { if (e.code === 'Space' && печ && печ.идёт) { e.preventDefault(); держит = true; $('держи').classList.add('жму'); } });
+addEventListener('keyup', e => { if (e.code === 'Space') отпустить(); });
+
+/* ═══════════ 🎥 СЦЕНА: принтер и камера, которая облетает его ═══════════ */
+let режимСцены = 'нет', обл = { a:0.6, накл:0.42, даль:62, цель:new THREE.Vector3(0, 7, 2) }, самВращ = true, тянем = null, витрина = new THREE.Group(); сцена.add(витрина);
+function показатьПринтер() { ПР.g.visible = true; витрина.visible = false; режимСцены = 'принтер'; обл.даль = 46; обл.накл = 0.5; обл.цель.set(0, 4, НОС_Z); самВращ = true;
+  $('верх3d').classList.remove('вкл'); $('низ3d').classList.remove('вкл');
+  $('cv3d').classList.add('вкл'); ['меню','заказ','галерея','дуэль'].forEach(i => $(i).classList.remove('вкл')); размер(); }
+function убратьМодели() { for (const д of [...ПР.стол.children]) if (!д.userData.часть) { ПР.стол.remove(д); if (д.userData.гладь) д.geometry.dispose(); } }   // всё, что не сам стол: валики, сопли, призрак, гладкая фигура
+ПР.стол.children.forEach(д => д.userData.часть = true);
+function размер() { renderer.setSize(innerWidth, innerHeight, false); кам.aspect = innerWidth/innerHeight; кам.updateProjectionMatrix(); }
 addEventListener('resize', размер);
+$('cv3d').addEventListener('pointerdown', e => { тянем = { x:e.clientX, y:e.clientY }; самВращ = false; });
+addEventListener('pointermove', e => { if (!тянем) return; обл.a -= (e.clientX - тянем.x)*0.008; обл.накл = Math.max(0.05, Math.min(1.2, обл.накл + (e.clientY - тянем.y)*0.005)); тянем = { x:e.clientX, y:e.clientY }; });
+addEventListener('pointerup', () => { if (тянем) setTimeout(() => { if (!тянем) самВращ = true; }, 2500); тянем = null; });
+$('cv3d').addEventListener('wheel', e => { обл.даль = Math.max(24, Math.min(110, обл.даль + Math.sign(e.deltaY)*4)); }, { passive:true });
+let прошлый = performance.now(); const _цельП = new THREE.Vector3();
+(function кадр() { requestAnimationFrame(кадр);
+  const t = performance.now(), dt = Math.min(0.05, (t - прошлый)/1000); прошлый = t;
+  if (режимСцены === 'нет') return;
+  if (печ && печ.идёт) { шагПечати(dt); if (печ.идёт) обл.цель.lerp(_цельП.set(0, (печ.сл + 1)*печ.н.h + 2.5, НОС_Z), Math.min(1, dt*1.5)); }   // камера следит за соплом
+  if (самВращ) обл.a += dt*(печ && печ.идёт ? 0.16 : 0.3);
+  кам.position.set(обл.цель.x + Math.sin(обл.a)*Math.cos(обл.накл)*обл.даль, обл.цель.y + Math.sin(обл.накл)*обл.даль, обл.цель.z + Math.cos(обл.a)*Math.cos(обл.накл)*обл.даль);
+  кам.lookAt(обл.цель); renderer.render(сцена, кам); })();
+/* 📸 снимок фигуры для полки: маленькая картинка, чтобы не пересобирать модель */
+function снимокМодели() { const w = 260, h = 184, к2 = new THREE.PerspectiveCamera(36, w/h, 0.1, 300); const н = печ.н;
+  к2.position.set(14, н.высота*0.9 + 8, 22 + НОС_Z); к2.lookAt(0, н.высота*0.45, ПР.стол.position.z); const r2 = new THREE.WebGLRenderer({ antialias:true, preserveDrawingBuffer:true });
+  r2.setSize(w, h); r2.outputColorSpace = THREE.SRGBColorSpace; r2.toneMapping = THREE.ACESFilmicToneMapping; const был = ПР.g.visible; ПР.g.children.forEach(д => { if (д !== ПР.стол) д.userData.вид = д.visible, д.visible = false; });
+  ПР.стол.children.forEach(д => { if (д.userData.часть) д.userData.вид = д.visible, д.visible = false; }); const фон = сцена.background; сцена.background = new THREE.Color(0x0a1220);
+  r2.render(сцена, к2); const url = r2.domElement.toDataURL('image/jpeg', 0.7);
+  ПР.g.children.forEach(д => { if (д.userData.вид !== undefined) { д.visible = д.userData.вид; delete д.userData.вид; } }); ПР.стол.children.forEach(д => { if (д.userData.вид !== undefined) { д.visible = д.userData.вид; delete д.userData.вид; } });
+  сцена.background = фон; r2.dispose(); return url; }
+
+/* ═══════════ ✨ ПОСЛЕ ПЕЧАТИ: снимаешь фигуру со стола и крутишь; «шлифовка» делает её гладкой и блестящей ═══════════ */
+function показатьИтогПечати(итог) {
+  музыка('спокойно'); показВключён = true; обл.цель.set(0, печ.н.высота*0.5 + 0.5, НОС_Z + 6); обл.даль = Math.max(30, печ.н.высота*3.4 + 18); самВращ = true;
+  верх3d(итог, null); кнопкиНиза('печать', итог);
+}
+function отшлифовать() { if (!печ || !печ.мод || !печ.итог || печ.итог.шлиф) return;
+  const м = гладкаяМодель(печ.итог, ПР.стол); if (!м) { тост('Тут нечего шлифовать 🙂', 1800); return; } Snd2('шлиф');
+  печ.мод.им.visible = false; печ.мод.сопли.visible = false; печ.итог.шлиф = true;
+  м.scale.set(1, 0.001, 1); const t0 = performance.now(); (function рост() { const k = Math.min(1, (performance.now() - t0)/700); м.scale.y = 0.001 + k*0.999; if (k < 1) requestAnimationFrame(рост); else {
+    печ.итог.картинка = снимокМодели(); try { localStorage.setItem(КЛЮЧ, JSON.stringify(полка)); } catch (_) {} } })();   // на полке — уже гладкая
+  тост('✨ Отшлифовал и покрыл лаком: слои сгладились, сопли срезаны — как из магазина!', 2600);
+  const b = [...$('низ3d').children].find(x => x.textContent.includes('отшлифовать')); if (b) b.remove(); }
+function Snd2(вид) { if (вид === 'шлиф') { for (let i = 0; i < 6; i++) setTimeout(() => писк(1600 + i*120, 0.05), i*70); } }
+/* 🏛 витрина: фигуры на подставках (полка и дуэль) — без принтера */
 let показВключён = false;
 function показатьФигуру(итог, режим, второй) {
-  музыка(второй ? 'бой' : 'спокойно');         // на показе фигуры музыка не обрывается
-  while (стойка.children.length) стойка.remove(стойка.children[0]);
-  const пара = !!второй;
-  стойка.add(собратьФигуру(итог, пара ? -9 : 0));
-  if (пара) стойка.add(собратьФигуру(второй, 9));
-  размер();
-  навестиКамеру(пара);
-  $('cv3d').classList.add('вкл'); $('верх3d').classList.add('вкл'); $('низ3d').classList.add('вкл');
-  показВключён = true; самВращ = true;
-  ['меню','заказ','печЭкран','галерея','дуэль'].forEach(i => $(i).classList.remove('вкл'));
-  const шапка = пара
-    ? '<h1 style="font-size:clamp(18px,4.6vw,30px)">⚔️ ' + итог.слово + '</h1>'
-    : '<h1 style="font-size:clamp(18px,4.6vw,30px)">🖨 ' + итог.слово + '</h1>';
-  $('верх3d').innerHTML = шапка +
-    '<div class="оценка">' + (пара
-      ? 'слева — ты (' + итог.очки + '), справа — соперник (' + второй.очки + ')'
-      : 'Качество ' + итог.качество + '% · сопли: ' + итог.сопли + ' · очки: ' + итог.очки) + '</div>' +
-    '<div class="под">👆 крути пальцем</div>';
-  $('низ3d').innerHTML = '';
-  const кн = (т, кл, fn) => { const b = document.createElement('button');
-    b.className = 'кн мал ' + (кл || 'сер'); b.textContent = т; b.onclick = fn; $('низ3d').appendChild(b); };
-  if (режим === 'печать') { кн('🖨 ещё раз', 'зел', () => { закрыть3d(); показать('заказ'); });
-    кн('🗄 на полку', '', () => { закрыть3d(); открытьГалерею(); }); }
-  кн('🏠 в меню', '', () => { закрыть3d(); показать('меню'); });
+  музыка(второй ? 'бой' : 'спокойно'); while (витрина.children.length) витрина.remove(витрина.children[0]);
+  const поставить = (и, x) => { const подст = new THREE.Group(); подст.position.x = x; витрина.add(подст);
+    мш(new THREE.CylinderGeometry(9, 9.6, 1.2, 48), new THREE.MeshStandardMaterial({ color:0x2a3346, roughness:0.4, metalness:0.3 }), 0, -0.6, 0, подст);
+    if (и.слоиПечати) модельПоРецепту(и, подст); else подст.add(старая(и)); };
+  поставить(итог, второй ? -12 : 0); if (второй) поставить(второй, 12);
+  ПР.g.visible = false; витрина.visible = true; режимСцены = 'витрина'; обл.цель.set(0, 5, 0); обл.даль = второй ? 64 : 42; самВращ = true; показВключён = true;
+  $('cv3d').classList.add('вкл'); ['меню','заказ','галерея','дуэль'].forEach(i => $(i).classList.remove('вкл')); размер();
+  верх3d(итог, второй); кнопкиНиза(режим, итог);
 }
-function закрыть3d() { $('cv3d').classList.remove('вкл'); $('верх3d').classList.remove('вкл');
-  $('низ3d').classList.remove('вкл'); показВключён = false; }
-let тянем = null;
-addEventListener('pointerdown', e => { if (показВключён) { тянем = { x:e.clientX, y:e.clientY }; самВращ = false; } });
-addEventListener('pointermove', e => { if (!тянем || !показВключён) return;
-  вращ += (e.clientX - тянем.x) * 0.01; стойка.rotation.x = Math.max(-1, Math.min(1,
-    стойка.rotation.x + (e.clientY - тянем.y) * 0.006));
-  тянем = { x:e.clientX, y:e.clientY }; });
-addEventListener('pointerup', () => { тянем = null; });
-(function крутить() { requestAnimationFrame(крутить);
-  if (!показВключён) return;
-  if (самВращ) вращ += 0.006;
-  стойка.rotation.y = вращ;
-  renderer.render(сцена, кам); })();
+function верх3d(итог, второй) {
+  $('верх3d').classList.add('вкл'); $('низ3d').classList.add('вкл');
+  $('верх3d').innerHTML = '<h1 style="font-size:clamp(18px,4.6vw,30px)">' + (второй ? '⚔️ ' : '🖨 ') + итог.слово + '</h1><div class="оценка">' + (второй
+      ? 'слева — ты (' + итог.очки + '), справа — соперник (' + второй.очки + ')' : 'Качество ' + итог.качество + '% · сопли: ' + итог.сопли + ' · очки: ' + итог.очки) + '</div><div class="под">👆 крути пальцем</div>'; }
+function кнопкиНиза(режим, итог) { $('низ3d').innerHTML = '';
+  const кн = (т, кл, fn) => { const b = document.createElement('button'); b.className = 'кн мал ' + (кл || 'сер'); b.textContent = т; b.onclick = fn; $('низ3d').appendChild(b); };
+  if (режим === 'печать') { кн('✨ отшлифовать', 'зел', () => отшлифовать()); кн('🖨 ещё раз', '', () => { закрыть3d(); показать('заказ'); }); кн('🗄 на полку', '', () => { закрыть3d(); открытьГалерею(); }); }
+  кн('🏠 в меню', '', () => { закрыть3d(); показать('меню'); }); }
+function закрыть3d() { $('cv3d').classList.remove('вкл'); $('верх3d').classList.remove('вкл'); $('низ3d').classList.remove('вкл'); $('печHUD').classList.remove('вкл'); $('держи').classList.remove('вкл');
+  показВключён = false; режимСцены = 'нет'; if (печ) печ.идёт = false; }
+/* 🧱 старые фигуры с полки (до 17.10, из квадратиков) — показываем как раньше */
+function старая(и) { const g = new THREE.Group(), с = и.сетка || [], H = с.length; for (let y = 0; y < H; y++) { const ц = цветСлояДля(и, H - 1 - y, H);
+    for (let x = 0; x < (с[y] || []).length; x++) if (с[y][x]) мш(new THREE.BoxGeometry(0.95, 0.95, 3), new THREE.MeshStandardMaterial({ color:ц, roughness:0.4 }), (x - 6)*1, (H - 1 - y) + 0.5, 0, g); }
+  g.scale.setScalar(0.8); return g; }
 
 /* ═══════════ 🗄 ПОЛКА ═══════════ */
 const КЛЮЧ = 'дуэль3d_полка_v1';
@@ -645,20 +744,16 @@ function открытьГалерею() {
   });
 }
 function предпросмотр(c, и) {
-  const g = c.getContext('2d'), H = и.сетка.length;
-  const кл = Math.min(c.width / Ш, c.height / H);
-  const x0 = (c.width - кл*Ш)/2, y0 = (c.height - кл*H)/2;
-  for (let y = 0; y < H; y++) for (let x = 0; x < Ш; x++) {
-    if (!и.сетка[y][x]) continue;
-    g.fillStyle = цветСлояДля(и, y, H);
-    g.fillRect(x0 + x*кл, y0 + y*кл, кл, кл);
-  }
+  const g = c.getContext('2d');
+  if (и.картинка) { const img = new Image(); img.onload = () => g.drawImage(img, 0, 0, c.width, c.height); img.src = и.картинка; return; }
+  const H = (и.сетка || []).length; if (!H) return; const кл = Math.min(c.width/12, c.height/H), x0 = (c.width - кл*12)/2, y0 = (c.height - кл*H)/2;
+  for (let y = 0; y < H; y++) for (let x = 0; x < 12; x++) { if (!и.сетка[y][x]) continue; g.fillStyle = цветСлояДля(и, H - 1 - y, H); g.fillRect(x0 + x*кл, y0 + y*кл, кл, кл); }
 }
 
 /* ═══════════ ⚔️ ДУЭЛЬ НА ДВОИХ ═══════════
    Задание одно на обоих. По сети летит не сама фигура, а РЕЦЕПТ
    (слово, цвета, сетка, оценки) — второй телефон собирает её у себя. */
-const ЗАДАНИЯ = ['ракета','кот','домик','сердце','ёлка','звезда','робот','чашка','рыба','цветок','машина','гриб','пылесос'];
+const ЗАДАНИЯ = ['шар','куб','пирамида','снеговик','ракета','кот','домик','сердце','ёлка','звезда','робот','чашка','рыба','цветок','машина','гриб','пылесос','яблоко','уточка','бублик'];
 let дуэльСост = null;
 function открытьДуэль() {
   показать('дуэль');
@@ -695,7 +790,7 @@ function дуэльНачать(слово) {
 function дуэльГотово(итог) {
   if (!дуэльСост) { вПолку(итог); показатьФигуру(итог, 'печать'); return; }
   дуэльСост.мой = итог; вПолку(итог);
-  try { if (window.МКСеть) window.МКСеть.послать({ т:'слой-итог', итог }); } catch (_) {}
+  try { if (window.МКСеть) window.МКСеть.послать({ т:'слой-итог', итог:{ ...итог, картинка:undefined } }); } catch (_) {}      // картинку по сети не шлём — соперник соберёт модель сам
   if (дуэльСост.чужой) свестиДуэль(); else {
     показать('дуэль');
     $('дуэльКнопки').innerHTML = '';
@@ -758,8 +853,8 @@ function наВесьЭкран() {
 }
 function показать(id) {
   закрыть3d();
-  if (id !== 'печЭкран') музыка(id === 'дуэль' ? 'бой' : null);
-  ['меню','заказ','печЭкран','галерея','дуэль'].forEach(i => $(i).classList.toggle('вкл', i === id));
+  музыка(id === 'дуэль' ? 'бой' : null);
+  ['меню','заказ','галерея','дуэль'].forEach(i => $(i).classList.toggle('вкл', i === id));
 }
 $('кнПечать').onclick = () => { наВесьЭкран(); рисоватьЦвета(); показать('заказ'); $('знает').textContent = ''; };
 $('кнДуэль').onclick = () => { наВесьЭкран(); открытьДуэль(); };
@@ -769,7 +864,7 @@ $('кнЗвук').onclick = звукТумблер;
 $('кнНазад1').onclick = () => показать('меню');
 $('кнНазад2').onclick = () => показать('меню');
 $('кнНазад3').onclick = () => показать('меню');
-$('кнБросить').onclick = () => { if (печ) печ.идёт = false; cancelAnimationFrame(кадр); показать('меню'); };
+$('кнБросить').onclick = () => { if (печ) печ.идёт = false; держит = false; закрыть3d(); показать('меню'); };
 $('поле').oninput = () => { $('знает').textContent = $('поле').value.trim() ? знаетЛи($('поле').value) : ''; };
 $('кнСтарт').onclick = () => {
   const т = $('поле').value.trim();
@@ -780,29 +875,25 @@ $('кнСтарт').onclick = () => {
 
 /* ── для автотестов ── */
 window.__dbg = {
-  get экран() { return ['меню','заказ','печЭкран','галерея','дуэль'].find(i => $(i).classList.contains('вкл'))
-    || (показВключён ? '3d' : null); },
-  фигура(с) { return сделатьФигуру(с); },
+  get экран() { return ['меню','заказ','галерея','дуэль'].find(i => $(i).classList.contains('вкл')) || (печ && печ.идёт ? 'печать' : режимСцены !== 'нет' ? '3d' : null); },
+  фигура(с) { const ф = сделатьФигуру(с), н = нарезать(ф); return { откуда:ф.откуда, слоёв:н.слои.length, высота:+н.высота.toFixed(1), клеток:н.слои.reduce((a, сл) => a + сл.строки.reduce((b, st) => b + st.клетки.reduce((c, v) => c + v, 0), 0), 0),
+    ширина:н.слои.map(сл => сл.строки.length) }; },
   знает(с) { return знаетЛи(с); },
-  начать(с) { $('поле').value = с; начатьПечать(с, false); return печ.H; },
-  get печать() { return печ ? { H:печ.H, y:печ.y, верно:печ.верно, сопли:печ.сопли, идёт:печ.идёт } : null; },
-  допечатать() {            // честно «тапаем» по всем нужным клеткам
-    if (!печ) return null;
-    let щит = 0;
-    while (печ.идёт && щит++ < 4000) {
-      const y = печ.y, x = печ.сетка[y].findIndex((v, i) => v && !печ.готово[y][i]);
-      if (x < 0) break;
-      печ.x = x; тапнул();
-    }
-    return печ ? печ.идёт : false;
-  },
+  начать(с) { $('поле').value = с; начатьПечать(с, false); return печ.н.слои.length; },
+  get печать() { return печ ? { слой:печ.сл, слоёв:печ.н.слои.length, верно:печ.верно, нужно:печ.нужно, сопли:печ.сопли, идёт:печ.идёт, валиков:печ.мод.им.count } : null; },
+  держать(v) { держит = !!v; return держит; },
+  автопилот(v) { if (печ) печ.авто = v !== false; return !!(печ && печ.авто); },
+  допечатать() { if (!печ) return null; печ.авто = true; let щит = 0; while (печ.идёт && щит++ < 400000) шагПечати(0.02); return печ.идёт; },
+  итог() { return печ && печ.итог ? { ...печ.итог, картинка:!!печ.итог.картинка } : null; },
+  шлифовка() { отшлифовать(); return true; },
+  get валики() { if (!печ) return null; const им = печ.мод.им, м = new THREE.Matrix4(), out = []; for (const i of [0, 1, 2, Math.floor(им.count/2), им.count - 1]) { им.getMatrixAt(i, м); out.push(м.elements.map(v => +v.toFixed(2))); } return { count:им.count, out }; },
+  камера(a, накл, даль) { самВращ = false; обл.a = a; if (накл !== undefined) обл.накл = накл; if (даль) обл.даль = даль; return true; },
   get полка() { return полка.map(и => и.слово); },
   get музыка() { return { тема:текущаяТема, играет:!!Муз.таймер, вкл:Муз.вкл }; },
   звук() { звукТумблер(); return Муз.вкл; },
   get цвета() { return выбраны.slice(); },
   дуэльТест(слово) { дуэльНачать(слово); return дуэльСост && дуэльСост.слово; },
-  чужойИтог(и) { if (!дуэльСост) дуэльСост = { слово:и.слово, мой:null, чужой:null };
-    дуэльСост.чужой = и; if (дуэльСост.мой) свестиДуэль(); return true; },
+  чужойИтог(и) { if (!дуэльСост) дуэльСост = { слово:и.слово, мой:null, чужой:null }; дуэльСост.чужой = и; if (дуэльСост.мой) свестиДуэль(); return true; },
 };
 </script>
 <!-- 🪐 ПАНЕЛЬ ПЛАНЕТЫ ИГР (заказ Марка 12.09.2026): кнопка «в лобби» и приближение экрана.
@@ -1242,6 +1333,7 @@ window.__dbg = {
     { id:'ghostlife', имя:'Жизнь призрака', em:'👻', вместе:false },
     { id:'dustmaze',  имя:'Пыльный мститель', em:'🌫', вместе:false },
     { id:'phantom',   имя:'Поместье',     em:'👻', вместе:false },
+    { id:'zasosalo',  имя:'В глубине прибора', em:'🌀', вместе:false },
     { id:'emoplanet', имя:'Эмоциональная планета', em:'🪐', вместе:false },
     { id:'technobunt',имя:'Технобунт',    em:'⏻', вместе:false },
     { id:'matshtorm', имя:'Матшторм',     em:'🔢', вместе:false },
